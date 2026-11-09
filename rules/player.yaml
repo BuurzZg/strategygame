@@ -13,8 +13,18 @@ Player:
 	PlayerStatistics:
 	BaseAttackNotifier:
 		Interval: 300
+	GrantConditionOnSetting@mission:
+		Setting: mission
+		Condition: mission
 	ConquestVictoryConditions:
+		RequiresCondition: !mission
+	MissionObjectives:
+		RequiresCondition: mission
 	GrantBotConditions:
+	BotProfile@passive:
+		RequiresCondition: bot-passive
+		ThinkInterval: 25
+		HarvestBonus: 100
 	BotProfile@easy:
 		RequiresCondition: bot-easy
 		ThinkInterval: 40
@@ -42,13 +52,13 @@ Player:
 	HarvesterBotModule:
 		RequiresCondition: bot
 	BaseBuilderBotModule:
-		RequiresCondition: bot
+		RequiresCondition: bot && !bot-passive
 	UnitBuilderBotModule:
-		RequiresCondition: bot
+		RequiresCondition: bot && !bot-passive
 		UnitShares:
 			needle: 22
 			warden: 48
 			mender: 10
 			bastion: 20
 	SquadManagerBotModule:
-		RequiresCondition: bot
+		RequiresCondition: bot && !bot-passive

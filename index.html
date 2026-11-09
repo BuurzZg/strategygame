@@ -223,6 +223,55 @@ body.spectating .replay-only { display: flex !important; pointer-events: auto; }
 body.spectating #cmdpanel { display: none; }
 @media (pointer: coarse) { .touch-note { display: block; } }
 
+/* ---------- campaign ---------- */
+.skirmish { display: flex; flex-direction: column; gap: 14px; border-top: 1px solid var(--line-soft); padding-top: 16px; }
+.section-h { margin: 0; font: 700 13px var(--f-body); letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+.secondary.strong { color: var(--text); border-color: var(--team); }
+.eyebrow { font: 500 11px var(--f-mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--res); }
+.campaign-card h2, .briefing-card h2 { margin-top: -10px; }
+.prose { display: flex; flex-direction: column; gap: 10px; max-width: 64ch; }
+.prose p { margin: 0; color: var(--text); line-height: 1.55; font-size: 15px; }
+.prose:empty { display: none; }
+.missions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mission { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 14px; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line); padding: 12px 14px; cursor: pointer; }
+.mission:hover:not(:disabled) { border-color: var(--res); }
+.mission:disabled { cursor: not-allowed; opacity: 0.45; }
+.mission .num { font: 600 22px var(--f-mono); color: var(--muted); }
+.mission strong { display: block; font: 700 16px var(--f-display); }
+.mission .tag-line { display: block; color: var(--muted); font-size: 13px; }
+.mission .state { font: 500 11px var(--f-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.mission .state.done { color: var(--good); }
+.location { margin: -10px 0 0; color: var(--muted); font-style: italic; }
+.briefing-from { display: flex; align-items: baseline; gap: 10px; }
+.briefing-from strong { font: 700 14px var(--f-display); }
+.briefing-from em { font-style: normal; font-size: 12px; color: var(--muted); }
+.briefing-obj { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+#btn-objectives { pointer-events: auto; background: var(--panel); border: 1px solid var(--line); padding: 6px 12px; border-radius: 3px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+#btn-objectives:hover { border-color: var(--team); }
+#mission-timer .val { color: var(--warn); }
+#mission-timer.urgent .val { color: var(--bad); }
+#comms { position: absolute; top: 66px; left: max(16px, env(safe-area-inset-left, 0px)); width: min(380px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.comm { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--c); padding: 9px 12px; transition: opacity 0.6s, transform 0.6s; animation: comm-in 0.35s ease-out; }
+.comm.out { opacity: 0; transform: translateX(-8px); }
+.comm-head { display: flex; align-items: baseline; gap: 8px; }
+.comm-head strong { font: 700 13px var(--f-display); color: var(--c); }
+.comm-head em { font-style: normal; font-size: 11px; color: var(--muted); }
+.comm p { margin: 4px 0 0; line-height: 1.45; }
+.comm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: none; align-self: center; box-shadow: 0 0 8px var(--c); }
+@keyframes comm-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+#objectives { position: absolute; top: 66px; right: max(16px, env(safe-area-inset-right, 0px)); width: min(340px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); padding: 12px 14px; }
+#objectives h3 { margin: 0 0 8px; font: 600 10px var(--f-body); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+#objectives ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.obj { display: flex; gap: 10px; align-items: flex-start; line-height: 1.35; }
+.obj em { font-style: normal; font-size: 11px; color: var(--muted); }
+.obj-box { width: 12px; height: 12px; border: 1.5px solid var(--muted); flex: none; margin-top: 3px; }
+.obj.done { color: var(--muted); }
+.obj.done .obj-box { background: var(--good); border-color: var(--good); }
+.obj.failed { color: var(--bad); text-decoration: line-through; }
+.obj.failed .obj-box { border-color: var(--bad); }
+.obj-time { font: 500 12px var(--f-mono); color: var(--warn); }
+@media (prefers-reduced-motion: reduce) { .comm { animation: none; transition: none; } }
+
 @media (max-width: 900px) {
   #minimap { width: 140px; height: 140px; }
   .grid { grid-template-columns: repeat(4, 42px); }
@@ -256,12 +305,16 @@ body.spectating #cmdpanel { display: none; }
       <div class="stat" id="st-res"><span class="lbl">Resonance</span><span class="val" id="res-val">0</span></div>
       <div class="stat" id="st-sup"><span class="lbl">Supply</span><span class="val" id="sup-val">0 / 0</span></div>
       <div class="stat"><span class="lbl">Elapsed</span><span class="val" id="time-val">00:00</span></div>
+      <div class="stat" id="mission-timer" hidden><span class="lbl">Time left</span><span class="val" id="timer-val">00:00</span></div>
+      <button id="btn-objectives" type="button" hidden>Objectives <kbd>O</kbd></button>
       <label class="stat replay-only" for="replay-speed"><span class="lbl">Replay speed</span>
         <select id="replay-speed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></label>
       <button id="btn-menu" type="button">Menu <kbd>Esc</kbd></button>
     </header>
     <div id="toasts" aria-live="polite"></div>
     <div id="net-status" hidden>Waiting for other players…</div>
+    <div id="comms" aria-live="polite"></div>
+    <aside id="objectives" hidden aria-label="Mission objectives"><h3>Objectives</h3><ul id="objectives-list"></ul></aside>
     <footer id="dock">
       <div id="mini-wrap"><canvas id="minimap" width="376" height="376" aria-label="Minimap"></canvas></div>
       <section id="selpanel" aria-label="Selection"></section>
@@ -278,13 +331,18 @@ body.spectating #cmdpanel { display: none; }
     <div class="card">
       <h1 class="title">GLASSWAKE</h1>
       <p class="lede">The dunes of Veyl were fused to glass by a fire no one remembers. Now the vents beneath them sing, and two survey consortia want the song. Harvest resonance, weave your lattice, break theirs.</p>
-      <div>
+      <div class="row">
+        <button type="button" class="primary" id="btn-campaign">Campaign</button>
+        <button type="button" class="secondary" id="btn-mp">Multiplayer</button>
+        <label class="secondary file-btn" for="replay-file">Watch replay<input id="replay-file" type="file" accept=".json,application/json"></label>
+      </div>
+      <section class="skirmish" aria-labelledby="skirmish-h">
+        <h2 id="skirmish-h" class="section-h">Skirmish</h2>
         <div class="field-label">Consortium</div>
         <div class="factions" id="faction-pick">
           <button type="button" class="faction" data-f="accord" aria-pressed="true" style="--c:#3fd8c6"><strong>Halcyon Accord</strong><span>Survey mandate from the northern shelf. Cold optics, patient doctrine.</span></button>
           <button type="button" class="faction" data-f="combine" aria-pressed="false" style="--c:#f09a3a"><strong>Ochre Combine</strong><span>Salvage guilds of the furnace basins. Loud engines, short contracts.</span></button>
         </div>
-      </div>
       <div class="row">
         <div>
           <div class="field-label">Opponent</div>
@@ -299,17 +357,52 @@ body.spectating #cmdpanel { display: none; }
           <div class="seed"><input id="seed-input" type="number" min="1" max="99999" value="1207" aria-label="Map seed"><button type="button" class="chip" id="seed-roll">Roll</button></div>
         </div>
       </div>
-      <div class="row">
-        <button type="button" class="primary" id="btn-start">Make landfall</button>
-        <button type="button" class="secondary" id="btn-mp">Multiplayer</button>
-        <label class="secondary file-btn" for="replay-file">Watch replay<input id="replay-file" type="file" accept=".json,application/json"></label>
-      </div>
+      <div class="row"><button type="button" class="secondary strong" id="btn-start">Start skirmish</button></div>
+      </section>
       <p class="error" id="title-error" role="alert"></p>
       <p class="touch-note">Glasswake plays best with a mouse and keyboard. On touch: tap to select, tap the ground to order, drag to pan, pinch to zoom.</p>
       <details>
         <summary>Controls</summary>
         <dl class="keys" id="keys-list"></dl>
       </details>
+    </div>
+  </div>
+
+  <div id="campaign-screen" class="screen" hidden>
+    <div class="card panel-card campaign-card">
+      <div class="eyebrow">Campaign</div>
+      <h2 id="campaign-title">The Choir Beneath</h2>
+      <div id="campaign-intro" class="prose"></div>
+      <div>
+        <div class="field-label">Difficulty</div>
+        <div class="chips-row" id="campaign-diff">
+          <button type="button" class="chip" data-cd="easy" aria-pressed="false">Easy</button>
+          <button type="button" class="chip" data-cd="normal" aria-pressed="true">Normal</button>
+          <button type="button" class="chip" data-cd="hard" aria-pressed="false">Hard</button>
+        </div>
+      </div>
+      <ol id="mission-list" class="missions"></ol>
+      <p class="error" id="campaign-error" role="alert"></p>
+      <div class="row"><button type="button" class="secondary" id="btn-campaign-back">Back</button></div>
+    </div>
+  </div>
+
+  <div id="briefing-screen" class="screen" hidden>
+    <div class="card panel-card briefing-card">
+      <div class="eyebrow" id="briefing-num">Mission 1</div>
+      <h2 id="briefing-title">Landfall</h2>
+      <p class="location" id="briefing-loc"></p>
+      <div class="briefing-from"><span class="comm-dot" style="--c:#3fd8c6"></span><strong>Director Imre Vashti</strong><em>Accord Survey Command</em></div>
+      <div id="briefing-text" class="prose"></div>
+      <div>
+        <div class="field-label">Objectives</div>
+        <ul id="briefing-obj" class="briefing-obj"></ul>
+      </div>
+      <p class="error" id="briefing-error" role="alert"></p>
+      <div class="row">
+        <button type="button" class="primary" id="btn-begin">Begin mission</button>
+        <button type="button" class="secondary" id="btn-briefing-back">Back</button>
+      </div>
     </div>
   </div>
 
@@ -376,8 +469,12 @@ body.spectating #cmdpanel { display: none; }
     <div class="card panel-card">
       <h2 class="end-title" id="end-title">Victory</h2>
       <p class="lede" id="end-lede"></p>
+      <div id="end-debrief" class="prose"></div>
       <table class="stats-table" id="end-stats"></table>
       <div class="row">
+        <button type="button" class="primary" id="btn-next" hidden>Next mission</button>
+        <button type="button" class="primary" id="btn-retry" hidden>Retry mission</button>
+        <button type="button" class="secondary" id="btn-to-campaign" hidden>Campaign</button>
         <button type="button" class="primary" id="btn-again">New map</button>
         <button type="button" class="secondary" id="btn-save-replay">Save replay</button>
         <button type="button" class="secondary" id="btn-title">Title</button>

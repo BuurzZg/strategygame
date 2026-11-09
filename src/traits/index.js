@@ -6,4 +6,5 @@ import './economy.js';
 import './buildings.js';
 import './player.js';
 import './bot.js';
+import './mission.js';
 import '../engine/weapons.js';

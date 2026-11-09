@@ -16,10 +16,12 @@ export class CameraRig {
     this.pitch = 0.95;
     this.dist = 72; this.distT = 72;
   }
-  jump(x, z) { this.tx = x; this.tz = z; this.clamp(); }
+  jump(x, z) { this.tx = x; this.tz = z; this.glide = null; this.clamp(); }
+  glideTo(x, z) { this.glide = { x, z }; }
   jumpWorld(x, y) { this.jump(x * R, y * R); }
   forward() { return [-Math.sin(this.yaw), -Math.cos(this.yaw)]; }
   pan(dx, dz) {
+    this.glide = null;
     const [fx, fz] = this.forward();
     const s = this.dist / 70;
     this.tx += (-fz * dx + fx * dz) * s; this.tz += (fx * dx + fz * dz) * s;
@@ -28,6 +30,12 @@ export class CameraRig {
   clamp() { this.tx = Math.max(8, Math.min(this.size - 8, this.tx)); this.tz = Math.max(8, Math.min(this.size - 8, this.tz)); }
   zoom(f) { this.distT = Math.max(28, Math.min(150, this.distT * f)); }
   update(dt) {
+    if (this.glide) {
+      const k = Math.min(1, dt * 2.5);
+      this.tx += (this.glide.x - this.tx) * k; this.tz += (this.glide.z - this.tz) * k;
+      if (Math.abs(this.glide.x - this.tx) + Math.abs(this.glide.z - this.tz) < 0.3) this.glide = null;
+      this.clamp();
+    }
     this.dist += (this.distT - this.dist) * Math.min(1, dt * 10);
     const ty = this.map.heightAt(this.tx, this.tz);
     const p = this.pitch + (this.dist - 72) * 0.0018;
@@ -410,6 +418,7 @@ export class Input {
       else if (core) this.rig.jumpWorld(core.x, core.y);
       return;
     }
+    if (k === 'o') { this.ui.toggleObjectives(); return; }
     if (k === 'q') { this.rig.yaw += 0.2; return; }
     if (k === 'e') { this.rig.yaw -= 0.2; return; }
     if (!this.canCommand) return;

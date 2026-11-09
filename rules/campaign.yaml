@@ -1,0 +1,41 @@
+# Actors used by campaign missions. They are never buildable.
+
+beacon:
+	Inherits: ^Structure
+	-Buildable:
+	-Recyclable:
+	-ProvidesPrerequisite:
+	Tooltip:
+		Name: Survey Beacon
+		Description: An Accord survey beacon, dropped ahead of the landing.
+	Health:
+		HP: 60000
+	Building:
+		Footprint: 1
+		RequiresField: false
+	RevealsShroud:
+		Range: 4c0
+	WithModel:
+		Model: beacon
+
+deepdrill:
+	Inherits: ^Structure
+	-Buildable:
+	-Recyclable:
+	Tooltip:
+		Name: Deep Drill
+		Description: A Combine bore rig driven straight into the singing lattice under the dunes.
+	Health:
+		HP: 360000
+	Building:
+		Footprint: 4
+		RequiresField: false
+	RevealsShroud:
+		Range: 8c0
+	WithModel:
+		Model: deepdrill
+
+# Invisible vision source used by mission scripts (m.reveal).
+camera:
+	RevealsShroud:
+		Range: 6c0

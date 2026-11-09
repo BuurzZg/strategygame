@@ -1,0 +1,110 @@
+Mission:
+	Title: Landfall
+	Tagline: The beacon went quiet. Find out why.
+	Location: Ninefold Shelf, northern dunes
+	Briefing@1: Survey Group Halcyon, welcome to Veyl. Your drop pods are down on the Ninefold Shelf, a day's walk from the richest vent field we have charted.
+	Briefing@2: We dropped a survey beacon ahead of you. It stopped transmitting an hour ago. Take your Wardens and Needles north-east and find out what happened to it.
+	Briefing@3: Once the area is secure I will send down your Core. From there you can weave a base, put Skimmers on the vents and start earning your keep.
+	Objective@1: Secure the survey beacon
+	Objective@2: Weave a Foundry
+	Objective@3: Destroy the Combine scrap camp
+	Debrief@1: The scrap camp is glass dust and the beacon is singing again. The Combine knows we are here now.
+	Debrief@2: Dr. Aune has asked for an escort to the big vent in the middle of the shelf. He says it is louder than the others.
+	FailText: Survey Group Halcyon has been scattered. Command is pulling the landing back to orbit.
+	Map:
+		Size: 72
+		Seed: 1011
+		Rock: 26
+		Spawn@accord: 10,62
+		Spawn@combine: 60,12
+		Vent@home: 20,54
+		Vent@camp: 56,21
+		Vent@mid: 36,36,80
+		Clear@beacon: 30,40,5
+		Path@a: 10,62,30,40,2
+		Path@b: 30,40,58,14,2
+		Path@c: 20,54,10,62,1.5
+		Path@d: 30,40,36,36,1.5
+	Player@accord:
+		Name: Survey Group Halcyon
+		Faction: accord
+		Playable: true
+		Cash: 0
+	Player@combine:
+		Name: Ochre Combine
+		Faction: combine
+		Bot: passive
+		Cash: 0
+	Actor@w1:
+		Type: warden
+		Owner: accord
+		Cell: 12,60
+		Facing: 896
+	Actor@w2:
+		Type: warden
+		Owner: accord
+		Cell: 13,62
+		Facing: 896
+	Actor@w3:
+		Type: warden
+		Owner: accord
+		Cell: 11,58
+		Facing: 896
+	Actor@n1:
+		Type: needle
+		Owner: accord
+		Cell: 15,59
+		Facing: 896
+	Actor@n2:
+		Type: needle
+		Owner: accord
+		Cell: 14,63
+		Facing: 896
+	Actor@beacon:
+		Type: beacon
+		Owner: neutral
+		Cell: 30,39
+	Actor@salvage1:
+		Type: needle
+		Owner: combine
+		Cell: 32,37
+	Actor@salvage2:
+		Type: needle
+		Owner: combine
+		Cell: 33,41
+	Actor@salvage3:
+		Type: warden
+		Owner: combine
+		Cell: 29,36
+	Actor@camp_siphon:
+		Type: siphon
+		Owner: combine
+		Cell: 57,14
+	Actor@camp_pylon:
+		Type: pylon
+		Owner: combine
+		Cell: 54,11
+	Actor@camp_spire:
+		Type: spire
+		Owner: combine
+		Cell: 53,17
+	Actor@camp_g1:
+		Type: warden
+		Owner: combine
+		Cell: 55,18
+	Actor@camp_g2:
+		Type: warden
+		Owner: combine
+		Cell: 60,17
+	Actor@camp_skim:
+		Type: skimmer
+		Owner: combine
+		Cell: 58,18
+
+Rules:
+	core:
+		-Buildable:
+	uplink:
+		-Buildable:
+	bastion:
+		-Buildable:

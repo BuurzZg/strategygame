@@ -1,0 +1,210 @@
+Mission:
+	Title: Wake
+	Tagline: Stop the Deep Drill before it breaks the Choir.
+	Location: Quill's drill site, beyond the Furnace Line
+	Briefing@1: The Deep Drill is through the crust. Aune's models say that when it reaches the lattice the whole network fails at once, and every vent on Veyl goes dark. So does every crew standing near one.
+	Briefing@2: Quill has dug in around the drill with everything he has left. An orbital Uplink keeps dropping reinforcements onto his perimeter. Take it out if you can.
+	Briefing@3: The disturbance is also whipping up glass storms across the dunes. Light units caught in one will not come out. Watch for the warnings and get clear.
+	Briefing@4: This is the end of it, Halcyon. Destroy the Deep Drill.
+	Objective@1: Destroy the Deep Drill before it breaches
+	Objective@2: Destroy the Combine Uplink to stop reinforcement drops (optional)
+	Debrief@1: The Deep Drill has collapsed into its own shaft. The storms are dying down.
+	FailText: The Deep Drill reached the lattice. Across Veyl, the vents have fallen silent.
+	Map:
+		Size: 96
+		Seed: 5055
+		Rock: 28
+		Spawn@accord: 12,84
+		Spawn@combine: 82,14
+		Vent@a: 22,76
+		Vent@b: 12,66
+		Vent@centre: 46,50,120
+		Vent@c: 66,32
+		Vent@d: 62,66
+		Vent@e: 30,36
+		Clear@drill: 80,12,7
+		Clear@base: 84,17,9
+		Clear@outpost: 59,30,4
+		Path@a: 12,84,46,50,2.5
+		Path@b: 46,50,80,12,2.5
+		Path@c: 12,84,30,36,2
+		Path@d: 30,36,80,12,2
+		Path@e: 12,84,62,66,2
+		Path@f: 62,66,80,12,2
+	Player@accord:
+		Name: Survey Group Halcyon
+		Faction: accord
+		Playable: true
+		Cash: 1500
+	Player@combine:
+		Name: Ochre Combine
+		Faction: combine
+		Bot: campaign
+		Cash: 1000
+	Actor@core:
+		Type: core
+		Owner: accord
+		Cell: 11,83
+	Actor@foundry:
+		Type: foundry
+		Owner: accord
+		Cell: 16,79
+	Actor@uplink:
+		Type: uplink
+		Owner: accord
+		Cell: 7,78
+	Actor@res1:
+		Type: resonator
+		Owner: accord
+		Cell: 16,85
+	Actor@res2:
+		Type: resonator
+		Owner: accord
+		Cell: 6,86
+	Actor@s1:
+		Type: skimmer
+		Owner: accord
+		Cell: 19,75
+	Actor@s2:
+		Type: skimmer
+		Owner: accord
+		Cell: 20,77
+	Actor@s3:
+		Type: skimmer
+		Owner: accord
+		Cell: 13,70
+	Actor@s4:
+		Type: skimmer
+		Owner: accord
+		Cell: 14,72
+	Actor@w1:
+		Type: warden
+		Owner: accord
+		Cell: 22,72
+		Facing: 896
+	Actor@w2:
+		Type: warden
+		Owner: accord
+		Cell: 23,74
+		Facing: 896
+	Actor@w3:
+		Type: warden
+		Owner: accord
+		Cell: 21,70
+		Facing: 896
+	Actor@w4:
+		Type: warden
+		Owner: accord
+		Cell: 24,71
+		Facing: 896
+	Actor@w5:
+		Type: warden
+		Owner: accord
+		Cell: 25,73
+		Facing: 896
+	Actor@b1:
+		Type: bastion
+		Owner: accord
+		Cell: 20,73
+		Facing: 896
+	Actor@b2:
+		Type: bastion
+		Owner: accord
+		Cell: 22,75
+		Facing: 896
+	Actor@m1:
+		Type: mender
+		Owner: accord
+		Cell: 21,73
+	Actor@m2:
+		Type: mender
+		Owner: accord
+		Cell: 23,72
+	Actor@drill:
+		Type: deepdrill
+		Owner: combine
+		Cell: 78,10
+	Actor@quill_core:
+		Type: core
+		Owner: combine
+		Cell: 85,17
+	Actor@quill_uplink:
+		Type: uplink
+		Owner: combine
+		Cell: 88,8
+	Actor@cfound1:
+		Type: foundry
+		Owner: combine
+		Cell: 71,15
+	Actor@cfound2:
+		Type: foundry
+		Owner: combine
+		Cell: 79,21
+	Actor@cres1:
+		Type: resonator
+		Owner: combine
+		Cell: 88,13
+	Actor@cres2:
+		Type: resonator
+		Owner: combine
+		Cell: 90,20
+	Actor@cres3:
+		Type: resonator
+		Owner: combine
+		Cell: 73,7
+	Actor@dsp1:
+		Type: spire
+		Owner: combine
+		Cell: 76,15
+	Actor@dsp2:
+		Type: spire
+		Owner: combine
+		Cell: 83,15
+	Actor@dsp3:
+		Type: spire
+		Owner: combine
+		Cell: 76,9
+	Actor@dsp4:
+		Type: spire
+		Owner: combine
+		Cell: 70,20
+	Actor@csiphon:
+		Type: siphon
+		Owner: combine
+		Cell: 58,29
+	Actor@cs1:
+		Type: skimmer
+		Owner: combine
+		Cell: 82,22
+	Actor@cs2:
+		Type: skimmer
+		Owner: combine
+		Cell: 66,26
+	Actor@cs3:
+		Type: skimmer
+		Owner: combine
+		Cell: 64,30
+	Actor@cw1:
+		Type: warden
+		Owner: combine
+		Cell: 70,24
+	Actor@cw2:
+		Type: warden
+		Owner: combine
+		Cell: 72,25
+	Actor@cw3:
+		Type: warden
+		Owner: combine
+		Cell: 74,23
+	Actor@cb1:
+		Type: bastion
+		Owner: combine
+		Cell: 78,26
+	Actor@cn1:
+		Type: needle
+		Owner: combine
+		Cell: 66,20
+	Actor@cn2:
+		Type: needle
+		Owner: combine
+		Cell: 68,22

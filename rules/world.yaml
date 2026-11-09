@@ -15,6 +15,13 @@ World:
 		Glow: ffd391
 		Dark: 5a3510
 		Description: Salvage guilds of the furnace basins. Loud engines, short contracts.
+	Faction@neutral:
+		InternalName: neutral
+		Name: Independent
+		Color: a49cb4
+		Glow: e2dcef
+		Dark: 3a3546
+		Description: Stranded crews and abandoned equipment.
 	Locomotor@hover:
 		Name: hover
 		TerrainSpeeds:
@@ -33,6 +40,12 @@ World:
 	ResourceLayer:
 		RegrowInterval: 200
 		RegrowAmount: 1
+	GrantConditionOnSetting@mission:
+		Setting: mission
+		Condition: mission
+	MissionScript:
+		RequiresCondition: mission
 	StartingUnits:
+		RequiresCondition: !mission
 		BaseActor: core
 		Units: skimmer, skimmer, skimmer, needle, warden

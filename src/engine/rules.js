@@ -2,7 +2,7 @@ import { parseYaml, mergeFiles, resolveInheritance } from './miniyaml.js';
 import { TraitRegistry, ProjectileRegistry, WarheadRegistry, compileCondition } from './traits.js';
 import { parseWDist } from './math.js';
 
-export const RULE_FILES = ['rules/world.yaml', 'rules/player.yaml', 'rules/defaults.yaml', 'rules/units.yaml', 'rules/structures.yaml'];
+export const RULE_FILES = ['rules/world.yaml', 'rules/player.yaml', 'rules/defaults.yaml', 'rules/units.yaml', 'rules/structures.yaml', 'rules/campaign.yaml'];
 export const WEAPON_FILES = ['rules/weapons.yaml'];
 
 // Parse a field value according to the type of its default.
@@ -79,8 +79,11 @@ export class WeaponInfo {
 }
 
 export class Rules {
-  constructor(ruleTexts, weaponTexts) {
-    const defs = resolveInheritance(mergeFiles(ruleTexts.map(([f, t]) => parseYaml(t, f))));
+  // extraNodes: already-parsed top-level nodes merged last (e.g. a mission's rule overrides).
+  constructor(ruleTexts, weaponTexts, extraNodes = []) {
+    const lists = ruleTexts.map(([f, t]) => parseYaml(t, f));
+    if (extraNodes.length) lists.push(extraNodes);
+    const defs = resolveInheritance(mergeFiles(lists));
     this.actors = new Map();
     for (const [name, nodes] of defs) this.actors.set(name, new ActorInfo(name, nodes));
     const wdefs = mergeFiles(weaponTexts.map(([f, t]) => parseYaml(t, f)));
@@ -109,8 +112,12 @@ export class Rules {
   }
 }
 
-// Load rules with any text reader (fetch in the browser, fs in Node).
-export async function loadRules(readText) {
+// Load rule texts with any reader (fetch in the browser, fs in Node).
+export async function loadRuleTexts(readText) {
   const read = async (files) => Promise.all(files.map(async (f) => [f, await readText(f)]));
-  return new Rules(await read(RULE_FILES), await read(WEAPON_FILES));
+  return { rules: await read(RULE_FILES), weapons: await read(WEAPON_FILES) };
+}
+export async function loadRules(readText, extraNodes = []) {
+  const t = await loadRuleTexts(readText);
+  return new Rules(t.rules, t.weapons, extraNodes);
 }

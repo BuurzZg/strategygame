@@ -24,6 +24,11 @@ export class WorldRenderer {
     this.reveal = !!opts.reveal || !viewer;
     this.sfx = opts.sfx || (() => {});
     this.onNotify = opts.onNotify || (() => {});
+    this.onSay = opts.onSay || (() => {});
+    this.onObjectives = opts.onObjectives || (() => {});
+    this.onFocus = opts.onFocus || (() => {});
+    this.storms = [];
+    this.clock = 0;
     this.map = world.map;
     this.styles = new Map([...world.factions].map(([k, v]) => [k, factionStyle(v)]));
     this.views = new Map();
@@ -64,7 +69,7 @@ export class WorldRenderer {
     model.root.add(ring);
     model.baseY = model.body.position.y;
     this.scene.add(model.root);
-    const v = { actor: a, model, ring, style, radius, seen: false };
+    const v = { actor: a, owner: a.owner, model, ring, style, radius, seen: false };
     if (a.building) {
       const b = a.building, s = b.size;
       let hy = -1e9;
@@ -78,6 +83,7 @@ export class WorldRenderer {
     for (const a of this.world.actors) if (!this.views.has(a.id) && !a.dead) { const v = this.makeView(a); if (v) this.views.set(a.id, v); }
     for (const [id, v] of this.views) {
       if (v.actor.disposed || v.actor.dead) { this.scene.remove(v.model.root); this.views.delete(id); this.selected.delete(v.actor); }
+      else if (v.owner !== v.actor.owner) { this.scene.remove(v.model.root); const nv = this.makeView(v.actor); if (nv) this.views.set(id, nv); else this.views.delete(id); }
     }
   }
 
@@ -101,7 +107,9 @@ export class WorldRenderer {
         m.body.scale.y = 0.08 + 0.92 * p;
         if (wv && !wv.done && !wv.waiting && Math.random() < 0.25) this.fx.weave(a.x * R, v.y + 0.2, a.y * R, v.radius * 0.9, v.style.glow);
         if (m.turret && a.turret) m.turret.rotation.y = -toRad(lerpAngle(a.turret.pfacing, a.turret.facing, alpha));
-        if (m.spin && (!wv || wv.done)) m.spin.rotation.y = t * (a.type === 'uplink' ? 0.4 : 0.8);
+        if (m.spin && (!wv || wv.done)) m.spin.rotation.y = t * (a.type === 'uplink' ? 0.4 : a.type === 'deepdrill' ? 2.4 : 0.8);
+        if (a.type === 'deepdrill' && m.glow) m.glow.material.color.setHSL(0.92, 1, 0.55 + Math.sin(t * 5) * 0.12);
+        if (a.type === 'beacon' && m.glow) m.glow.visible = Math.sin(t * 4) > -0.3;
         continue;
       }
       const p = this.renderPos(a, alpha);
@@ -155,6 +163,13 @@ export class WorldRenderer {
           if (this.viewer && ev.player === this.viewer.index) { this.onNotify(`${ev.text}: press Space to look`, 'bad'); this.sfx('alert', ev.x, ev.y, true); }
           break;
         case 'outcome': break;
+        case 'say': if (!this.viewer || ev.player === this.viewer.index) this.onSay(ev.speaker, ev.text); break;
+        case 'objectives': if (!this.viewer || ev.player === this.viewer.index) this.onObjectives(ev.kind, ev.text); break;
+        case 'focus': if (!this.viewer || ev.player === this.viewer.index) this.onFocus(ev.x * R, ev.y * R); break;
+        case 'storm':
+          this.storms.push({ z0: ev.y0 * R, z1: ev.y1 * R, until: this.clock + ev.ticks / 25, warning: ev.warning });
+          if (!ev.warning) this.sfx('storm', (this.map.n * 512), (ev.y0 + ev.y1) / 2, true);
+          break;
         case 'sound': if (this.pointVisible(ev.x, ev.y)) this.sfx(ev.name, ev.x, ev.y); break;
         case 'muzzle': {
           if (!actor || !this.isVisible(actor)) break;
@@ -230,7 +245,25 @@ export class WorldRenderer {
     }
   }
 
+  // Glass storms: a band of wind-driven glass across the whole map width.
+  updateStorms(dt) {
+    this.storms = this.storms.filter((st) => st.until > this.clock);
+    const W = this.map.n * 2;
+    const glass = new THREE.Color(0xffc4e0), dust = new THREE.Color(0x4a3a58);
+    for (const st of this.storms) {
+      const count = st.warning ? 4 : 70;
+      for (let i = 0; i < count; i++) {
+        const x = Math.random() * W, z = st.z0 + Math.random() * (st.z1 - st.z0);
+        const y = this.map.heightAt(x, z) + Math.random() * (st.warning ? 1.5 : 6);
+        this.fx.glow.spawn(x, y, z, 14 + Math.random() * 10, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 3, 0.5 + Math.random() * 0.5, st.warning ? 0.5 : 0.7, 0.2, glass, st.warning ? 0.5 : 0.9);
+        if (!st.warning && i % 6 === 0) this.fx.smoke.spawn(x, y, z, 10, 0.5, 0, 1.4, 3, 7, dust, 0.35);
+      }
+    }
+  }
+
   update(t, dt, alpha) {
+    this.clock += dt;
+    this.updateStorms(dt);
     this.syncViews();
     this.updateViews(t, alpha);
     this.updateProjectiles(alpha);

@@ -1,0 +1,117 @@
+Mission:
+	Title: Choir Station
+	Tagline: Hold the line while the vent sings.
+	Location: Centre of the Ninefold Shelf
+	Briefing@1: Dr. Aune has set up a listening Siphon beside the big central vent. He calls it Choir Station, and he believes the sound coming out of that vent is not noise.
+	Briefing@2: He needs six uninterrupted minutes of recordings. The Combine has already filed a claim on the vent and will not let us sit there quietly.
+	Briefing@3: Your base is already woven to the west. Keep Choir Station standing until the recording finishes. Prism Spires near the station would help.
+	Objective@1: Keep Choir Station standing for six minutes
+	Objective@2: Weave two Prism Spires (optional)
+	Debrief@1: Aune has his recording. Slowed down, the vent repeats the same phrase every eleven seconds, and other vents across the shelf answer it.
+	Debrief@2: He has started calling the whole network the Choir. The Combine has started moving heavy equipment north.
+	FailText: Choir Station was destroyed and the recording is lost.
+	Map:
+		Size: 72
+		Seed: 2022
+		Rock: 24
+		Spawn@accord: 14,40
+		Spawn@combine: 64,10
+		Vent@choir: 36,36,120
+		Vent@south: 12,54
+		Vent@north: 20,24
+		Clear@choir: 36,36,8
+		Path@a: 14,40,36,36,2.5
+		Path@b: 36,36,66,8,2
+		Path@c: 36,36,68,60,2
+		Path@d: 36,36,40,68,2
+		Path@e: 14,40,20,24,1.5
+	Player@accord:
+		Name: Survey Group Halcyon
+		Faction: accord
+		Playable: true
+		Cash: 800
+	Player@combine:
+		Name: Ochre Combine
+		Faction: combine
+		Bot: passive
+		Cash: 0
+	Actor@core:
+		Type: core
+		Owner: accord
+		Cell: 13,39
+	Actor@res1:
+		Type: resonator
+		Owner: accord
+		Cell: 17,35
+	Actor@foundry:
+		Type: foundry
+		Owner: accord
+		Cell: 9,43
+	Actor@pylon1:
+		Type: pylon
+		Owner: accord
+		Cell: 24,40
+	Actor@pylon2:
+		Type: pylon
+		Owner: accord
+		Cell: 29,32
+	Actor@choir:
+		Type: siphon
+		Owner: accord
+		Cell: 30,37
+	Actor@s1:
+		Type: skimmer
+		Owner: accord
+		Cell: 16,44
+	Actor@s2:
+		Type: skimmer
+		Owner: accord
+		Cell: 17,46
+	Actor@s3:
+		Type: skimmer
+		Owner: accord
+		Cell: 19,28
+	Actor@s4:
+		Type: skimmer
+		Owner: accord
+		Cell: 20,30
+	Actor@w1:
+		Type: warden
+		Owner: accord
+		Cell: 31,41
+		Facing: 0
+	Actor@w2:
+		Type: warden
+		Owner: accord
+		Cell: 33,40
+		Facing: 0
+	Actor@w3:
+		Type: warden
+		Owner: accord
+		Cell: 33,34
+		Facing: 0
+	Actor@w4:
+		Type: warden
+		Owner: accord
+		Cell: 31,33
+		Facing: 0
+	Actor@n1:
+		Type: needle
+		Owner: accord
+		Cell: 28,40
+	Actor@n2:
+		Type: needle
+		Owner: accord
+		Cell: 28,35
+	Actor@m1:
+		Type: mender
+		Owner: accord
+		Cell: 29,39
+
+Rules:
+	core:
+		-Buildable:
+	uplink:
+		-Buildable:
+	bastion:
+		-Buildable:

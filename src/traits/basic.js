@@ -51,6 +51,7 @@ defineTrait('Health', class Health extends Trait {
     if (self.owner.stats) self.owner.stats.actorLost(self, recycled);
     if (byPlayer && byPlayer !== self.owner && byPlayer.stats) byPlayer.stats.kills++;
     world.fx({ t: 'killed', actor: self.id, type: self.type, x: self.x, y: self.y, owner: self.owner.index, building: !!self.building, size: self.building ? self.building.size : 0, recycled });
+    world.emit('killed', self, attacker, byPlayer);
     world.addFrameEndTask((w) => w.removeActor(self));
   }
 }, { HP: 10000, Radius: 512 });

@@ -176,6 +176,31 @@ export function buildModel(type, faction) {
       out.spin = dishG;
       break;
     }
+    case 'beacon': {
+      mesh(cyl(0.8, 1.0, 0.4, 6), M.dark, 0, 0.2, 0, body);
+      for (const a of [0, 2.1, 4.2]) { const leg = mesh(box(0.18, 2.2, 0.18), M.hull, Math.cos(a) * 0.45, 1.2, Math.sin(a) * 0.45, body); leg.rotation.z = Math.cos(a) * 0.18; leg.rotation.x = -Math.sin(a) * 0.18; }
+      mesh(box(0.7, 0.35, 0.7), M.trim, 0, 2.4, 0, body);
+      const lamp = mesh(ico(0.32), M.glow, 0, 2.95, 0, body);
+      out.spin = lamp; out.glow = lamp;
+      break;
+    }
+    case 'deepdrill': {
+      mesh(box(7.6, 0.8, 7.6), M.dark, 0, 0.4, 0, body);
+      mesh(cyl(2.6, 3.1, 1.2, 8), M.hull, 0, 1.4, 0, body);
+      for (const [x, z] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) {
+        const strut = mesh(box(0.45, 7.5, 0.45), M.dark, x * 0.75, 4.6, z * 0.75, body);
+        strut.rotation.z = -x * 0.06; strut.rotation.x = z * 0.06;
+      }
+      mesh(box(4.6, 0.45, 4.6), M.trim, 0, 8.2, 0, body);
+      const column = new THREE.Group(); column.position.y = 2.2; body.add(column);
+      mesh(cyl(0.9, 0.9, 5.6, 8), M.hull, 0, 2.8, 0, column);
+      for (let i = 0; i < 5; i++) { const ring = mesh(tor(1.05, 0.12, 12), M.trim, 0, 0.6 + i * 1.1, 0, column); ring.rotation.x = Math.PI / 2; }
+      mesh(cone(0.9, 1.4, 8), M.dark, 0, -0.5, 0, column).rotation.x = Math.PI;
+      const shaft = mesh(cyl(1.6, 1.6, 0.12, 16), new THREE.MeshBasicMaterial({ color: 0xff6aa8 }), 0, 0.85, 0, body);
+      shaft.castShadow = false;
+      out.spin = column; out.glow = shaft;
+      break;
+    }
     default:
       mesh(box(1, 1, 1), M.hull, 0, 0.5, 0, body);
   }

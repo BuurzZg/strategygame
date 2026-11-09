@@ -6,7 +6,8 @@
   "description": "Browser RTS on three.js with a deterministic lockstep engine",
   "scripts": {
     "start": "node server/relay.js",
-    "test": "node tools/simtest.js",
+    "test": "node tools/simtest.js && node tools/missiontest.js",
+    "missions": "node tools/missiontest.js",
     "check": "node tools/check-determinism.js"
   },
   "dependencies": {

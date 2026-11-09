@@ -3,7 +3,11 @@ import { CELL, HALF } from '../engine/math.js';
 import { FindAndDeliverResources } from '../activities/harvest.js';
 
 defineTrait('PlayerResources', class extends Trait {
-  created() { this.cash = this.info.Cash; this.self.owner.resources = this; this.self.owner.harvestBonus = 100; }
+  created() {
+    const slot = this.self.owner.slot;
+    this.cash = slot && slot.cash !== undefined ? slot.cash : this.info.Cash;
+    this.self.owner.resources = this; this.self.owner.harvestBonus = 100;
+  }
   take(n) { if (this.cash < n) return false; this.cash -= n; return true; }
   give(n) { this.cash += n; }
 }, { Cash: 500 });
@@ -170,6 +174,11 @@ defineTrait('ConquestVictoryConditions', class extends Trait {
     }
   }
 }, {});
+
+// Grants a condition when a game setting is present, e.g. `mission` for campaign games.
+defineTrait('GrantConditionOnSetting', class extends Trait {
+  created() { if (this.world.settings[this.info.Setting]) this.self.grantCondition(this.info.Condition); }
+}, { Setting: '', Condition: '' });
 
 // ---------------------------------------------------------------- bots
 defineTrait('GrantBotConditions', class extends Trait {

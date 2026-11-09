@@ -37,10 +37,15 @@ npm test
 ```
 
 ```bash
+npm run missions
+```
+
+```bash
 npm run check
 ```
 
-- `npm test` runs two clients over a simulated laggy network with random orders, checks that every frame's sync hash matches, replays the recording, and plays a bot match.
+- `npm test` runs two clients over a simulated laggy network with random orders, checks that every frame's sync hash matches, replays the recording, and plays a bot match. It then runs the mission checks.
+- `npm run missions` runs only the campaign mission checks.
 - `npm run check` lints the simulation code for anything that could differ between browsers.
 
 ## Engine architecture
@@ -72,6 +77,46 @@ npm run check
 | Rendering | `render/` | Reads the world, interpolates, and turns simulation events (beams, explosions, deaths) into particles and sound. It never writes to the simulation. |
 | UI | `ui/` | Camera, selection, order generators (normal, placement, attack-move), HUD and minimap. |
 | Networking | `engine/netclient.js`, `server/relay.js` | The relay hosts lobbies and forwards packets. It never simulates anything. |
+
+### Campaign and mission scripting
+
+The campaign, *The Choir Beneath*, has five missions. Each one is a data file plus a script:
+
+```
+campaign/campaign.yaml            mission order, speakers (name, role, colour), intro, epilogue
+campaign/missions/<id>.yaml       briefing, map spec, players, placed actors, rule overrides
+campaign/missions/<id>.js         the mission script (runs inside the deterministic simulation)
+```
+
+The **map spec** in a mission file describes a generated map. You set the size, seed and obsidian percentage, then add spawns, vents, forced clearings, carved paths and walls. Every coordinate is in cells.
+
+**Players** are either `Playable: true` or bots. A bot can be `passive` (only harvests), `easy`, `normal` or `hard`, or `campaign`, which uses the difficulty the player picked.
+
+**Actors** are placed with `Actor@name` entries. Each name becomes available to the script through `m.actor(name)`.
+
+The **Rules** section is merged on top of the normal rules. For example, `uplink:` with `-Buildable:` keeps the Uplink out of the build menu in that mission.
+
+A script exports `worldLoaded(m)` (and optionally `tick(m)`). Everything goes through `m`:
+
+| Area | API |
+| --- | --- |
+| Time | `m.frame`, `m.seconds(n)`, `m.minutes(n)`, `m.after(ticks, fn)`, `m.every(ticks, fn)` |
+| Triggers | `m.when(testFn, fn)`, `m.onKilled(actors, fn)`, `m.onEachKilled(actors, fn)`, `m.onEnter(cell, range, player, fn)`, `m.onBuilt(player, type, fn)` |
+| Actors | `m.actor(name)`, `m.actors(player, type)`, `m.near(cell, range, player)`, `m.spawn(type, player, cell, opts)`, `m.reinforce(player, types, from, to)`, `m.transfer(actors, player)`, `m.give(player, cash)` |
+| Orders | `m.move`, `m.attackMove`, `m.attack`, `m.hold`, `m.order(actors, name, target, extra)` |
+| Objectives | `m.objective(text, { primary, deadline, expire })`, `m.updateObjective`, `m.complete`, `m.fail`, `m.isDone`, `m.win()`, `m.lose()` |
+| Presentation | `m.say(speaker, text)`, `m.hint(text)`, `m.focus(cell)`, `m.reveal(cell, range, ticks)`, `m.storm(y0, y1, ticks, warning)`, `m.damageBand(y0, y1, amount)` |
+| Misc | `m.you` (the player), `m.player(id)`, `m.difficulty`, `m.pick(easy, normal, hard)`, `m.rng`, `m.state` (scratch space) |
+
+How a mission ends:
+
+- **Victory** is always declared by the script with `m.win()`, because missions add objectives in stages.
+- **Failing** a primary objective ends the mission as a loss.
+- **Losing every unit and structure** also ends it as a loss.
+
+`npm run missions` loads every mission, checks placements, runs it idle, forces its victory path and checks determinism.
+
+Campaign progress is saved in the browser. Add `?unlock` to the URL to open every mission.
 
 ### Trait hooks
 
@@ -130,6 +175,16 @@ These apply to everything in `engine/`, `traits/` and `activities/`:
 - **Never let the UI or renderer change state directly.** Send an order.
 
 `npm run check` enforces most of this mechanically.
+
+## Campaign: The Choir Beneath
+
+| # | Mission | Type |
+| --- | --- | --- |
+| 1 | Landfall | Tutorial: squad combat, then build a base and raze a scrap camp |
+| 2 | Choir Station | Defend a research Siphon against timed waves for six minutes |
+| 3 | Glass Shadows | Squad only, no base: cut three relays in narrow canyons and rescue a lost crew |
+| 4 | Furnace Line | Full base battle against the Combine AI |
+| 5 | Wake | Destroy the Deep Drill against the clock while glass storms sweep the map |
 
 ## How it plays
 

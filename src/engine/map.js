@@ -41,9 +41,15 @@ export function makeNoise(seed) {
 }
 
 // ---------- the map ----------
+// `spec` is either a seed (symmetric skirmish map) or a mission map spec:
+//   { size, seed, rock (percent obsidian), spawns: [[x,y]], vents: [[x,y,rich%]],
+//     clear: [[x,y,r]], paths: [[x0,y0,x1,y1,w]], walls: [[x0,y0,x1,y1,w]] }  (cell units)
 export class GameMap {
-  constructor(seed = 1) {
-    const n = (this.n = MAP_N);
+  constructor(spec = 1) {
+    const isSpec = typeof spec === 'object';
+    const n = (this.n = isSpec ? spec.size : MAP_N);
+    const seed = isSpec ? spec.seed : spec;
+    this.spec = isSpec ? spec : null;
     this.seed = seed;
     this.rock = new Uint8Array(n * n);
     this.bld = new Int32Array(n * n);
@@ -53,9 +59,9 @@ export class GameMap {
     this.h = new Float32Array((n + 1) * (n + 1));
     this.vents = [];
     // base core centres, in continuous cell coordinates (point-symmetric about the map centre)
-    this.bases = [{ x: 13.5, y: 13.5 }, { x: n - 13.5, y: n - 13.5 }];
+    this.bases = isSpec ? spec.spawns.map(([x, y]) => ({ x, y })) : [{ x: 13.5, y: 13.5 }, { x: n - 13.5, y: n - 13.5 }];
     this.resVersion = 0;
-    this.generate();
+    if (isSpec) this.generateSpec(spec); else this.generate();
   }
 
   idx(i, j) { return j * this.n + i; }
@@ -181,6 +187,96 @@ export class GameMap {
     // --- resources around vents ---
     for (const v of this.vents) {
       const R = v.id === this.vents.length - 1 ? 4.2 : 3.6; // centre vent is richer
+      for (let j = Math.floor(v.y - R); j <= Math.ceil(v.y + R); j++) for (let i = Math.floor(v.x - R); i <= Math.ceil(v.x + R); i++) {
+        if (!this.terrainPassable(i, j)) continue;
+        const d = fhypot(i + 0.5 - v.x, j + 0.5 - v.y);
+        if (d > R || d < 0.9) continue;
+        const k = this.idx(i, j);
+        const amt = Math.round(140 + 220 * (1 - d / (R + 0.5)));
+        this.resMax[k] = amt; this.res[k] = amt; this.ventOf[k] = v.id;
+        v.cells.push(k);
+      }
+    }
+  }
+
+
+  // Authored mission map: noise obsidian + explicit clearings, paths and walls.
+  generateSpec(spec) {
+    const n = this.n;
+    const rnd = mulberry32(this.seed * 7919 + 17);
+    const fA = makeNoise(this.seed * 31 + 1), fB = makeNoise(this.seed * 31 + 2), fC = makeNoise(this.seed * 31 + 3);
+    this.vents = (spec.vents || []).map(([x, y, rich = 100], id) => ({ id, x, y, rich, wx: Math.round(x * CELL), wy: Math.round(y * CELL), cells: [] }));
+
+    const ridge = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const x = i + 0.5, y = j + 0.5;
+      ridge[j * n + i] = (1 - Math.abs(2 * fA(x * 0.05, y * 0.05, 4) - 1)) * 0.85 + fC(x * 0.21, y * 0.21, 2) * 0.3;
+    }
+    const sorted = Float32Array.from(ridge).sort();
+    const thresh = sorted[Math.floor(sorted.length * (1 - (spec.rock ?? 28) / 100))];
+    for (let k = 0; k < n * n; k++) this.rock[k] = ridge[k] > thresh ? 1 : 0;
+
+    const stamp = (x0, y0, x1, y1, w, val, wobble) => {
+      const len = fhypot(x1 - x0, y1 - y0);
+      const steps = Math.max(1, Math.ceil(len * 2));
+      const wob = rnd() * 10;
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const nx = len ? -(y1 - y0) / len : 0, ny = len ? (x1 - x0) / len : 0;
+        const off = wobble ? fsin(t * 6.283185307179586 + wob) * 2.5 * fsin(t * 3.141592653589793) : 0;
+        const cx = x0 + (x1 - x0) * t + nx * off, cy = y0 + (y1 - y0) * t + ny * off;
+        for (let dy = -Math.ceil(w); dy <= Math.ceil(w); dy++) for (let dx = -Math.ceil(w); dx <= Math.ceil(w); dx++) {
+          if (dx * dx + dy * dy > w * w + 0.5) continue;
+          const i = Math.floor(cx + dx), j = Math.floor(cy + dy);
+          if (i >= 1 && j >= 1 && i < n - 1 && j < n - 1) this.rock[j * n + i] = val;
+        }
+      }
+    };
+    for (const [x0, y0, x1, y1, w] of spec.walls || []) stamp(x0, y0, x1, y1, w, 1, false);
+    const circle = (x, y, r) => {
+      for (let j = Math.floor(y - r); j <= Math.ceil(y + r); j++) for (let i = Math.floor(x - r); i <= Math.ceil(x + r); i++) {
+        if (i >= 1 && j >= 1 && i < n - 1 && j < n - 1 && fhypot(i + 0.5 - x, j + 0.5 - y) <= r) this.rock[j * n + i] = 0;
+      }
+    };
+    for (const b of this.bases) circle(b.x, b.y, 9);
+    for (const v of this.vents) circle(v.x, v.y, 5);
+    for (const [x, y, r] of spec.clear || []) circle(x, y, r);
+    for (const [x0, y0, x1, y1, w] of spec.paths || []) stamp(x0, y0, x1, y1, w, 0, true);
+    for (let k = 0; k < n * n; k++) { const i = k % n, j = (k - i) / n; if (i < 1 || j < 1 || i >= n - 1 || j >= n - 1) this.rock[k] = 1; }
+
+    // fill pockets unreachable from the first spawn
+    const b0 = this.bases[0] || { x: n / 2, y: n / 2 };
+    const seen = new Uint8Array(n * n);
+    const q = [this.idx(Math.floor(b0.x), Math.floor(b0.y))];
+    seen[q[0]] = 1;
+    while (q.length) {
+      const k = q.pop(), i = k % n, j = (k - i) / n;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const a = i + di, b = j + dj;
+        if (!this.inBounds(a, b)) continue;
+        const kk = this.idx(a, b);
+        if (seen[kk] || this.rock[kk]) continue;
+        seen[kk] = 1; q.push(kk);
+      }
+    }
+    for (let k = 0; k < n * n; k++) if (!seen[k]) this.rock[k] = 1;
+
+    // heights (visual only)
+    const w = n + 1;
+    for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+      let hgt = fB(i * 0.035, j * 0.035, 4) * 3.2 + fsin((i + j) * 0.35 + fC(i * 0.05, j * 0.05, 2) * 6) * 0.18;
+      let rc = 0;
+      for (const [a, b] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) if (!this.inBounds(a, b) || this.rock[this.idx(a, b)]) rc++;
+      if (rc === 4) hgt += 3.2 + fA(i * 0.3, j * 0.3, 2) * 3.5; else if (rc > 0) hgt += rc * 0.55;
+      for (const b of this.bases) { const d = fhypot(i - b.x, j - b.y); if (d < 9) hgt = hgt * (d / 9) + 1.2 * (1 - d / 9); }
+      this.h[j * w + i] = hgt;
+    }
+    this.placeResources();
+  }
+
+  placeResources() {
+    for (const v of this.vents) {
+      const R = 3.6 * Math.sqrt((v.rich ?? 100) / 100);
       for (let j = Math.floor(v.y - R); j <= Math.ceil(v.y + R); j++) for (let i = Math.floor(v.x - R); i <= Math.ceil(v.x + R); i++) {
         if (!this.terrainPassable(i, j)) continue;
         const d = fhypot(i + 0.5 - v.x, j + 0.5 - v.y);

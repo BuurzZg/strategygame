@@ -4,6 +4,8 @@
 export class Player {
   constructor(world, index, slot) {
     this.world = world;
+    this.slot = slot;
+    this.id = slot.id || `p${index}`;
     this.index = index;
     this.name = slot.name || `Player ${index + 1}`;
     this.faction = slot.faction;

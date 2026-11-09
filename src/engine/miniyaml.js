@@ -43,24 +43,26 @@ function commentStart(line) {
 export function cloneNode(n) { return { key: n.key, value: n.value, loc: n.loc, nodes: n.nodes.map(cloneNode) }; }
 
 // Merge `node` into the list `list`: same key merges recursively, '-Key' removes.
-export function mergeInto(list, node) {
+// When merging override files (keepRemovals), the '-Key' node is also kept so that it
+// still removes the key if it comes back later through Inherits.
+export function mergeInto(list, node, keepRemovals = false) {
   if (node.key.startsWith('-')) {
     const k = node.key.slice(1);
     const i = list.findIndex((n) => n.key === k);
-    if (i < 0) throw new Error(`${node.loc}: cannot remove "${k}", it is not defined`);
-    list.splice(i, 1);
+    if (i >= 0) list.splice(i, 1);
+    if (keepRemovals && !list.some((n) => n.key === node.key)) list.push(cloneNode(node));
     return;
   }
   const ex = list.find((n) => n.key === node.key);
   if (!ex) { list.push(cloneNode(node)); return; }
   if (node.value !== '') ex.value = node.value;
-  for (const c of node.nodes) mergeInto(ex.nodes, c);
+  for (const c of node.nodes) mergeInto(ex.nodes, c, keepRemovals);
 }
 
-// Merge several parsed files into one map of top-level definitions.
+// Merge several parsed files (lists of top-level nodes) into one map of definitions.
 export function mergeFiles(fileLists) {
   const top = [];
-  for (const list of fileLists) for (const n of list) mergeInto(top, n);
+  for (const list of fileLists) for (const n of list) mergeInto(top, n, true);
   return new Map(top.map((n) => [n.key, n]));
 }
 

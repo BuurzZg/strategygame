@@ -14,6 +14,8 @@ const ICON = {
   foundry: '<path d="M3 20V10l6 3V10l6 3V6h4v14z"/><path d="M8 17h3M13 17h3"/>',
   spire: '<path d="M9 21h6l-1-11h-4z"/><path d="M8 7l4-5 4 5-4 3z"/>',
   uplink: '<path d="M5 9a7 7 0 0014 0z"/><path d="M12 9V4M12 16v5M8 21h8"/>',
+  beacon: '<path d="M12 3v3M8 21l4-12 4 12"/><circle cx="12" cy="7" r="2"/><path d="M5 5a9 9 0 000 6M19 5a9 9 0 010 6"/>',
+  deepdrill: '<path d="M4 21h16M6 21V9h12v12"/><path d="M12 3v14M9 14l3 4 3-4"/><path d="M8 9l1-4h6l1 4"/>',
   stop: '<rect x="6" y="6" width="12" height="12"/>',
   hold: '<path d="M7 4v16M17 4v16M7 12h10"/>',
   engage: '<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><circle cx="12" cy="12" r="3"/>',
@@ -46,6 +48,14 @@ export class Hud {
   attach(session, input) {
     this.s = session; this.world = session.world; this.viewer = session.viewer; this.input = input; this.rig = session.rig; this.renderer = session.renderer;
     this.paused = false; this.miniBase = null; this.toasts.innerHTML = '';
+    this.speakers = session.speakers || new Map();
+    $('comms').innerHTML = '';
+    const mission = !!(this.viewer && this.viewer.objectives && this.viewer.objectives.enabled);
+    $('btn-objectives').hidden = !mission;
+    $('objectives').hidden = true;
+    $('mission-timer').hidden = true;
+    this.objOpenUntil = mission ? performance.now() + 9000 : 0;
+    this.desyncShown = false;
     document.documentElement.style.setProperty('--team', this.viewer ? this.renderer.styleOf(this.viewer).css : '#c9c3d3');
     document.body.classList.toggle('spectating', !this.viewer);
     this.buildButtons();
@@ -193,6 +203,58 @@ export class Hud {
     setTimeout(() => el.remove(), 3200);
   }
 
+  // ---------------------------------------------------------------- campaign: comms + objectives
+  say(speakerId, text) {
+    const sp = this.speakers.get(speakerId) || { name: speakerId, role: '', color: '#c9c3d3' };
+    const box = $('comms');
+    const el = document.createElement('div');
+    el.className = 'comm';
+    el.style.setProperty('--c', sp.color);
+    const head = document.createElement('div');
+    head.className = 'comm-head';
+    head.innerHTML = `<span class="comm-dot"></span><strong></strong><em></em>`;
+    head.querySelector('strong').textContent = sp.name;
+    head.querySelector('em').textContent = sp.role;
+    const body = document.createElement('p');
+    body.textContent = text;
+    el.append(head, body);
+    box.appendChild(el);
+    while (box.children.length > 3) box.firstChild.remove();
+    const life = 5000 + text.length * 45;
+    setTimeout(() => el.classList.add('out'), life);
+    setTimeout(() => el.remove(), life + 600);
+    this.audio.play('comm');
+  }
+  objectivesEvent(kind, text) {
+    this.objOpenUntil = performance.now() + 7000;
+    if (kind === 'new') { this.toast(`New objective: ${text}`, 'info'); this.audio.play('objective'); }
+    else if (kind === 'done') { this.toast(`Objective complete: ${text}`, 'good'); this.audio.play('objective'); }
+    else if (kind === 'failed') this.fail(`Objective failed: ${text}`);
+  }
+  toggleObjectives() {
+    if ($('btn-objectives').hidden) return;
+    this.objPinned = !this.objPinned;
+    this.objOpenUntil = 0;
+  }
+  renderObjectives() {
+    const v = this.viewer;
+    if (!v || !v.objectives || !v.objectives.enabled) return;
+    const list = v.objectives.list;
+    const now = this.world.frame;
+    const fmt = (o) => o.deadline && o.state === 'active' ? ` <span class="obj-time">${fmtTime(Math.max(0, o.deadline - now) / 25)}</span>` : '';
+    const html = list.map((o) => `<li class="obj ${o.state} ${o.primary ? '' : 'optional'}"><span class="obj-box" aria-hidden="true"></span><span>${o.text.replace(/</g, '&lt;')}${o.primary ? '' : ' <em>optional</em>'}${fmt(o)}</span></li>`).join('');
+    const el = $('objectives-list');
+    if (el.innerHTML !== html) el.innerHTML = html;
+    $('objectives').hidden = !(this.objPinned || performance.now() < this.objOpenUntil);
+    const timed = list.filter((o) => o.deadline && o.state === 'active').sort((a, b) => a.deadline - b.deadline)[0];
+    $('mission-timer').hidden = !timed;
+    if (timed) {
+      const left = Math.max(0, timed.deadline - now) / 25;
+      $('timer-val').textContent = fmtTime(left);
+      $('mission-timer').classList.toggle('urgent', left < 60);
+    }
+  }
+
   togglePause(force) {
     if (!this.s || this.s.over) return;
     this.paused = force !== undefined ? force : !this.paused;
@@ -208,7 +270,7 @@ export class Hud {
       const used = v.supply.used(), cap = v.supply.cap();
       const sup = $('sup-val');
       sup.textContent = `${used} / ${cap}`;
-      sup.parentElement.classList.toggle('capped', used >= cap && cap < v.supply.info.Max);
+      sup.parentElement.classList.toggle('capped', cap > 0 && used >= cap && cap < v.supply.info.Max);
     } else {
       $('res-val').textContent = w.players.map((p) => p.resources.cash).join(' · ');
       $('sup-val').textContent = w.players.map((p) => `${p.supply.used()}/${p.supply.cap()}`).join(' · ');
@@ -473,7 +535,7 @@ export class Hud {
     $('net-status').hidden = this.stallT < 0.6;
     if (om.desync && !this.desyncShown) { this.desyncShown = true; this.toast(`Desync detected at frame ${om.desync.frame}. The game may diverge.`, 'bad'); }
     this.refreshT -= dt;
-    if (this.dirty || this.refreshT <= 0) { this.refreshPanels(); this.refreshT = 0.2; this.dirty = false; }
+    if (this.dirty || this.refreshT <= 0) { this.refreshPanels(); this.renderObjectives(); this.refreshT = 0.2; this.dirty = false; }
     this.miniT -= dt;
     if (this.miniT <= 0) { this.drawMinimap(); this.miniT = 0.12; }
     this.drawOverlay();

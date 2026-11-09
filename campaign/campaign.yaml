@@ -1,0 +1,31 @@
+# The Glasswake campaign: mission order, speakers and framing text.
+
+Campaign:
+	Title: The Choir Beneath
+	Intro@1: Veyl was a dead world on every chart. A fire older than any colony fused its deserts into glass, and nothing grew back.
+	Intro@2: Then the vents started singing. Resonance glass, harvested from the vent fields, holds a charge no lab can explain. Two outfits raced to claim it. The Halcyon Accord sent surveyors. The Ochre Combine sent drills.
+	Intro@3: You command Survey Group Halcyon. Your landing window opens now.
+	Epilogue@1: The Deep Drill went silent at dawn. Across the dunes, every vent held the same low note for nine minutes, then fell back into its old, uneven song.
+	Epilogue@2: Dr. Aune calls it a lattice. Director Vashti calls it a reason to stay. Marrow Quill has not been seen since the drill came down.
+	Epilogue@3: The Choir is still singing. For the first time, someone is listening.
+	Speaker@vashti:
+		Name: Director Imre Vashti
+		Role: Accord Survey Command
+		Color: 3fd8c6
+	Speaker@lind:
+		Name: Lt. Sefa Lind
+		Role: Field lieutenant
+		Color: 9ff9ee
+	Speaker@aune:
+		Name: Dr. Teodor Aune
+		Role: Resonance science
+		Color: ff9fcd
+	Speaker@quill:
+		Name: Marrow Quill
+		Role: Combine foreman
+		Color: f09a3a
+	Mission@1: m01-landfall
+	Mission@2: m02-choir
+	Mission@3: m03-shadows
+	Mission@4: m04-furnace
+	Mission@5: m05-wake

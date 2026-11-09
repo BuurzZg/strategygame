@@ -1,6 +1,7 @@
 import * as THREE from '../lib/three.module.js';
 import './traits/index.js';
-import { loadRules } from './engine/rules.js';
+import { loadRuleTexts, Rules } from './engine/rules.js';
+import { parseCampaign, parseMission, loadMission, missionSettings } from './engine/mission.js';
 import { GameMap } from './engine/map.js';
 import { World } from './engine/world.js';
 import { OrderManager, LocalConnection, ReplayConnection, TICK_MS } from './engine/ordermanager.js';
@@ -27,13 +28,31 @@ const audio = new Audio();
 const hud = new Hud(audio);
 
 let rules = null;
+let ruleTexts = null;
+let campaign = null;
+const missionInfo = new Map();
 let session = null;
 let input = null;
 let sun = null;
 let acc = 0;
 let net = null;
-const settings = { faction: 'accord', difficulty: 'normal', seed: 1207, name: '' };
-try { settings.name = localStorage.getItem('gw-name') || ''; } catch {}
+const settings = { faction: 'accord', difficulty: 'normal', seed: 1207, name: '', campaignDifficulty: 'normal' };
+try { settings.name = localStorage.getItem('gw-name') || ''; settings.campaignDifficulty = localStorage.getItem('gw-campaign-diff') || 'normal'; } catch {}
+
+const readText = async (f) => { const r = await fetch(f); if (!r.ok) throw new Error(`Could not load ${f} (${r.status})`); return r.text(); };
+const importScript = (f) => import(new URL(`../${f}`, import.meta.url).href);
+
+// Campaign progress lives in this browser only.
+const PROGRESS_KEY = 'gw-campaign-v1';
+function progress() { try { return JSON.parse(localStorage.getItem(PROGRESS_KEY)) || { done: {} }; } catch { return { done: {} }; } }
+function markDone(id, difficulty) { const p = progress(); p.done[id] = difficulty; try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(p)); } catch {} }
+function unlockedCount() {
+  if (params.has('unlock')) return campaign.missions.length;
+  const p = progress();
+  let n = 1;
+  for (const id of campaign.missions) { if (p.done[id]) n++; else break; }
+  return Math.min(n, campaign.missions.length);
+}
 
 function setupScene() {
   scene.clear();
@@ -70,7 +89,7 @@ function resize() {
 window.addEventListener('resize', resize);
 
 function show(screen) {
-  for (const id of ['title-screen', 'mp-screen', 'lobby-screen', 'pause-screen', 'end-screen']) $(id).hidden = id !== screen;
+  for (const id of ['title-screen', 'campaign-screen', 'briefing-screen', 'mp-screen', 'lobby-screen', 'pause-screen', 'end-screen']) $(id).hidden = id !== screen;
   $('hud').hidden = screen !== null;
 }
 
@@ -83,10 +102,11 @@ function teardown() {
   lastPump = performance.now();
 }
 
-function startSession({ gameSettings, localClient, connection, mode }) {
+function startSession({ gameSettings, localClient, connection, mode, missionDef = null, missionRules = null }) {
   teardown();
   setupScene();
-  const world = new World(rules, new GameMap(gameSettings.seed), gameSettings);
+  const map = missionDef ? new GameMap(missionDef.map) : new GameMap(gameSettings.seed);
+  const world = new World(missionRules || rules, map, gameSettings, { mission: missionDef });
   const viewer = mode === 'demo' || mode === 'replay' ? null : world.players.find((p) => p.clientIndex === localClient) || null;
   const clients = gameSettings.players.filter((p) => p.client !== undefined && p.client >= 0).map((p) => p.client);
   const om = new OrderManager(world, connection, { localClient, clients, latency: gameSettings.latency ?? 1, record: mode !== 'demo' && mode !== 'replay' });
@@ -94,7 +114,7 @@ function startSession({ gameSettings, localClient, connection, mode }) {
   if (connection.flushBacklog) connection.flushBacklog();
   om.onDesync = (d) => console.warn('Desync', d);
   const rig = new CameraRig(camera, world.map);
-  const s = { world, om, viewer, rig, mode, over: false, speed: 1, connection };
+  const s = { world, om, viewer, rig, mode, over: false, speed: 1, connection, mission: missionDef, speakers: campaign ? campaign.speakers : new Map() };
   const rd = new WorldRenderer(scene, world, viewer, {
     reveal: mode === 'demo' || params.has('reveal'),
     sfx: (name, x, y, flat) => {
@@ -103,6 +123,9 @@ function startSession({ gameSettings, localClient, connection, mode }) {
       audio.play(name, flat ? 0.9 : Math.max(0, 1 - d / 110) * (rig.dist < 60 ? 1 : 0.7));
     },
     onNotify: (text, kind) => hud.toast(text, kind),
+    onSay: (speaker, text) => hud.say(speaker, text),
+    onObjectives: (kind, text) => hud.objectivesEvent(kind, text),
+    onFocus: (x, z) => rig.glideTo(x, z),
   });
   s.renderer = rd;
   session = s;
@@ -111,13 +134,25 @@ function startSession({ gameSettings, localClient, connection, mode }) {
     input.edgeScroll = $('edge').checked;
     hud.attach(s, input);
   }
-  const core = world.actors.find((a) => a.type === 'core' && (!viewer || a.owner === viewer));
-  if (viewer && core) rig.jumpWorld(core.x + 5 * 1024 * (core.x < world.map.n * 512 ? 1 : -1), core.y + 5 * 1024 * (core.y < world.map.n * 512 ? 1 : -1));
-  if (viewer && core && core.x > world.map.n * 512) rig.yaw = Math.PI * 0.25;
+  const mine = viewer ? world.actors.filter((a) => a.owner === viewer && a.health) : [];
+  const core = mine.find((a) => a.type === 'core');
+  const half = world.map.n * 512;
+  if (core) rig.jumpWorld(core.x + 5 * 1024 * (core.x < half ? 1 : -1), core.y + 5 * 1024 * (core.y < half ? 1 : -1));
+  else if (mine.length) rig.jumpWorld(mine.reduce((t, a) => t + a.x, 0) / mine.length + 4096, mine.reduce((t, a) => t + a.y, 0) / mine.length - 4096);
+  const anchor = core || mine[0];
+  if (anchor && anchor.x > half && anchor.y < half) rig.yaw = Math.PI * 0.25;
   if (mode === 'demo') { rig.jump(80, 80); rig.distT = rig.dist = 95; }
   resize();
   rd.consumeEvents(world.fxEvents.splice(0));
   return s;
+}
+
+// Title-screen battle in the background, without switching screens.
+function startDemoQuiet() {
+  startSession({
+    gameSettings: { seed: 4242, players: [{ name: 'Accord', faction: 'accord', bot: 'normal' }, { name: 'Combine', faction: 'combine', bot: 'normal' }] },
+    localClient: -1, connection: new LocalConnection(), mode: 'demo',
+  });
 }
 
 function startDemo() {
@@ -144,11 +179,76 @@ function startSinglePlayer() {
   hud.toast('Tip: weave a Foundry (F), then a Resonator (R) before supply caps.', 'info');
 }
 
-function startReplay(replay) {
+async function startReplay(replay) {
   audio.init();
-  startSession({ gameSettings: replay.settings, localClient: -1, connection: new ReplayConnection(replay), mode: 'replay' });
+  let missionDef = null, missionRules = null;
+  if (replay.settings.mission) {
+    missionDef = await loadMission(replay.settings.mission, readText, importScript);
+    missionRules = new Rules(ruleTexts.rules, ruleTexts.weapons, missionDef.ruleNodes);
+  }
+  startSession({ gameSettings: replay.settings, localClient: -1, connection: new ReplayConnection(replay), mode: 'replay', missionDef, missionRules });
   show(null);
   hud.toast('Watching replay. Use the speed control at the top.', 'info');
+}
+
+// ---------------------------------------------------------------- campaign
+async function missionMeta(id) {
+  if (!missionInfo.has(id)) missionInfo.set(id, parseMission(await readText(`campaign/missions/${id}.yaml`), id));
+  return missionInfo.get(id);
+}
+
+async function openCampaign() {
+  show('campaign-screen');
+  $('campaign-error').textContent = '';
+  $('campaign-title').textContent = campaign.title;
+  $('campaign-intro').innerHTML = '';
+  for (const t of campaign.intro) { const p = document.createElement('p'); p.textContent = t; $('campaign-intro').appendChild(p); }
+  for (const b of $('campaign-diff').querySelectorAll('[data-cd]')) b.setAttribute('aria-pressed', String(b.dataset.cd === settings.campaignDifficulty));
+  const done = progress().done, open = unlockedCount();
+  const list = $('mission-list');
+  list.innerHTML = '';
+  try {
+    for (let i = 0; i < campaign.missions.length; i++) {
+      const id = campaign.missions[i], meta = await missionMeta(id);
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'mission'; b.disabled = i >= open; b.dataset.mission = id;
+      b.innerHTML = `<span class="num">${String(i + 1).padStart(2, '0')}</span><span><strong></strong><span class="tag-line"></span></span><span class="state ${done[id] ? 'done' : ''}">${done[id] ? `Complete · ${done[id]}` : i >= open ? 'Locked' : 'Ready'}</span>`;
+      b.querySelector('strong').textContent = meta.title;
+      b.querySelector('.tag-line').textContent = meta.tagline;
+      li.appendChild(b); list.appendChild(li);
+    }
+  } catch (e) { $('campaign-error').textContent = e.message; }
+}
+
+let briefingId = null;
+async function openBriefing(id) {
+  briefingId = id;
+  $('briefing-error').textContent = '';
+  const meta = await missionMeta(id);
+  const idx = campaign.missions.indexOf(id);
+  $('briefing-num').textContent = `Mission ${idx + 1} of ${campaign.missions.length}`;
+  $('briefing-title').textContent = meta.title;
+  $('briefing-loc').textContent = meta.location;
+  const bt = $('briefing-text'); bt.innerHTML = '';
+  for (const t of meta.briefing) { const p = document.createElement('p'); p.textContent = t; bt.appendChild(p); }
+  const ob = $('briefing-obj'); ob.innerHTML = '';
+  for (const t of meta.objectives) { const li = document.createElement('li'); li.textContent = t; ob.appendChild(li); }
+  show('briefing-screen');
+}
+
+async function startMission(id) {
+  audio.init();
+  try {
+    const def = await loadMission(id, readText, importScript);
+    const missionRules = new Rules(ruleTexts.rules, ruleTexts.weapons, def.ruleNodes);
+    startSession({ gameSettings: missionSettings(def, settings.campaignDifficulty), localClient: 0, connection: new LocalConnection(), mode: 'mission', missionDef: def, missionRules });
+    show(null);
+  } catch (e) {
+    console.error(e);
+    show('briefing-screen');
+    $('briefing-error').textContent = `Could not start the mission: ${e.message}`;
+  }
 }
 
 function showEnd() {
@@ -158,7 +258,24 @@ function showEnd() {
   const w = s.world;
   let title, cls, lede;
   const mins = Math.floor(w.frame / 1500), secs = Math.floor((w.frame / 25) % 60);
-  if (s.viewer) {
+  const deb = $('end-debrief');
+  deb.innerHTML = '';
+  const para = (t) => { const p = document.createElement('p'); p.textContent = t; deb.appendChild(p); };
+  $('btn-next').hidden = $('btn-retry').hidden = $('btn-to-campaign').hidden = true;
+  if (s.mode === 'mission' && s.viewer) {
+    const won = s.viewer.outcome === 'won';
+    const idx = campaign.missions.indexOf(s.mission.id);
+    title = won ? 'Mission complete' : 'Mission failed'; cls = won ? 'victory' : 'defeat';
+    lede = `${s.mission.title} · ${mins}m ${secs}s · ${s.world.settings.difficulty}`;
+    if (won) {
+      markDone(s.mission.id, s.world.settings.difficulty);
+      s.mission.debrief.forEach(para);
+      if (idx === campaign.missions.length - 1) campaign.epilogue.forEach(para);
+      $('btn-next').hidden = idx >= campaign.missions.length - 1;
+      $('btn-next').dataset.mission = campaign.missions[idx + 1] || '';
+    } else { para(s.mission.failText); $('btn-retry').hidden = false; }
+    $('btn-to-campaign').hidden = false;
+  } else if (s.viewer) {
     const won = s.viewer.outcome === 'won';
     title = won ? 'Victory' : 'Defeat'; cls = won ? 'victory' : 'defeat';
     const foes = w.players.filter((p) => s.viewer.isEnemy(p)).map((p) => p.name).join(', ');
@@ -299,7 +416,22 @@ $('replay-file').addEventListener('change', async (e) => {
 function alertTitle(msg) { $('title-error').textContent = msg; }
 $('btn-menu').addEventListener('click', () => hud.togglePause(true));
 $('btn-resume').addEventListener('click', () => hud.togglePause(false));
-$('btn-restart').addEventListener('click', () => startSinglePlayer());
+$('btn-restart').addEventListener('click', () => { if (session && session.mode === 'mission') startMission(session.mission.id); else startSinglePlayer(); });
+$('btn-campaign').addEventListener('click', () => openCampaign());
+$('btn-campaign-back').addEventListener('click', () => show('title-screen'));
+$('campaign-diff').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cd]'); if (!b) return;
+  settings.campaignDifficulty = b.dataset.cd;
+  try { localStorage.setItem('gw-campaign-diff', b.dataset.cd); } catch {}
+  for (const x of $('campaign-diff').querySelectorAll('[data-cd]')) x.setAttribute('aria-pressed', String(x === b));
+});
+$('mission-list').addEventListener('click', (e) => { const b = e.target.closest('[data-mission]'); if (b && !b.disabled) openBriefing(b.dataset.mission); });
+$('btn-begin').addEventListener('click', () => startMission(briefingId));
+$('btn-briefing-back').addEventListener('click', () => openCampaign());
+$('btn-next').addEventListener('click', (e) => { const id = e.currentTarget.dataset.mission; startDemoQuiet(); if (id) openBriefing(id); });
+$('btn-retry').addEventListener('click', () => startMission(session.mission.id));
+$('btn-to-campaign').addEventListener('click', () => { startDemoQuiet(); openCampaign(); });
+$('btn-objectives').addEventListener('click', () => hud.toggleObjectives());
 $('btn-quit').addEventListener('click', () => leaveGame());
 $('btn-again').addEventListener('click', () => { settings.seed = 1 + Math.floor(Math.random() * 99998); $('seed-input').value = settings.seed; startSinglePlayer(); });
 $('btn-title').addEventListener('click', () => startDemo());
@@ -377,7 +509,9 @@ function frame(now) {
   $('keys-list').innerHTML = keysHtml;
   $('keys-list-2').innerHTML = keysHtml;
   try {
-    rules = await loadRules(async (f) => { const r = await fetch(f); if (!r.ok) throw new Error(`Could not load ${f} (${r.status})`); return r.text(); });
+    ruleTexts = await loadRuleTexts(readText);
+    rules = new Rules(ruleTexts.rules, ruleTexts.weapons);
+    campaign = parseCampaign(await readText('campaign/campaign.yaml'));
   } catch (e) {
     $('title-error').textContent = `Failed to load rules: ${e.message}`;
     console.error(e);
@@ -388,4 +522,4 @@ function frame(now) {
 })();
 
 // Console helpers
-window.glasswake = { get session() { return session; }, get world() { return session && session.world; }, get input() { return input; }, get rules() { return rules; }, startSinglePlayer, startReplay, settings };
+window.glasswake = { get session() { return session; }, get world() { return session && session.world; }, get input() { return input; }, get rules() { return rules; }, startSinglePlayer, startReplay, startMission, openCampaign, settings };

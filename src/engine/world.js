@@ -9,10 +9,14 @@ import { CELL, HALF, isqrt, distSq, hashMix } from './math.js';
 // iteration in actor-id order. Rendering and UI only read from it, and only change it
 // by sending Orders through the OrderManager.
 export class World {
-  constructor(rules, map, settings) {
+  // extras.mission: a loaded mission definition (map, actors, script) for campaign games.
+  constructor(rules, map, settings, extras = {}) {
     this.rules = rules;
     this.map = map;
     this.settings = settings;
+    this.mission = extras.mission || null;
+    this.listeners = new Map();
+    this.named = new Map();
     this.frame = 0;
     this.rng = new Random(settings.seed * 2654435761);
     this.nextActorId = 1;
@@ -27,6 +31,7 @@ export class World {
     this.pathBudget = 0;
     this.hashSize = 8 * CELL;
     this.unitHash = new Map();
+    this.hashStamp = -1;
     this.gameOver = false;
 
     this.neutral = new Player(this, -1, { name: 'Neutral', faction: 'neutral', team: -1 });
@@ -38,8 +43,8 @@ export class World {
     for (const p of this.players) p.actor = new Actor(this, rules.actor('Player'), p);
     this.neutral.actor = null;
 
-    for (const t of this.worldActor.traits) if (t.worldLoaded) t.worldLoaded();
-    for (const p of this.players) for (const t of p.actor.traits) if (t.worldLoaded) t.worldLoaded();
+    for (const t of this.worldActor.traits) if (t.enabled && t.worldLoaded) t.worldLoaded();
+    for (const p of this.players) for (const t of p.actor.traits) if (t.enabled && t.worldLoaded) t.worldLoaded();
     this.runFrameEndTasks();
   }
 
@@ -59,6 +64,7 @@ export class World {
     }
     a.inWorld = true;
     for (const t of a.traits) if (t.addedToWorld) t.addedToWorld();
+    if (a.mobile) this.hashStamp = -1; // new unit: rebuild the spatial index on next query
   }
   removeActor(a) {
     if (a.disposed) return;
@@ -84,12 +90,30 @@ export class World {
   addFrameEndTask(fn) { this.frameEndTasks.push(fn); }
   runFrameEndTasks() { while (this.frameEndTasks.length) { const list = this.frameEndTasks; this.frameEndTasks = []; for (const fn of list) fn(this); } }
 
+  // Simulation events (deterministic; used by mission scripts): 'killed', 'built', 'produced'.
+  on(name, fn) { if (!this.listeners.has(name)) this.listeners.set(name, []); this.listeners.get(name).push(fn); }
+  emit(name, ...args) { const l = this.listeners.get(name); if (l) for (const fn of l.slice()) fn(...args); }
+
+  playerById(id) { return this.players.find((p) => p.id === id) || (id === 'neutral' ? this.neutral : null); }
+
+  // Hand an actor to another player (e.g. a rescued squad joining you).
+  changeOwner(a, p) {
+    if (a.dead || a.owner === p) return;
+    const old = a.owner;
+    a.cancelActivity();
+    a.owner = p;
+    if (a.building && p.index >= 0) a.building.seenBy |= 1 << p.index;
+    for (const t of a.traits) if (t.ownerChanged) t.ownerChanged(old, p);
+    this.emit('ownerChanged', a, old, p);
+  }
+
   // Render-only event (explosions, beams, sounds, notifications). Never read by the simulation.
   fx(ev) { ev.frame = this.frame; this.fxEvents.push(ev); }
   notify(player, text, kind = 'info') { this.fx({ t: 'notify', player: player.index, text, kind }); }
 
   // ------------------------------------------------------------ spatial queries
   rebuildUnitHash() {
+    this.hashStamp = this.frame;
     this.unitHash.clear();
     const s = this.hashSize;
     for (const a of this.actors) {
@@ -101,6 +125,7 @@ export class World {
     }
   }
   unitsInCircle(x, y, r, out = []) {
+    if (this.hashStamp !== this.frame) this.rebuildUnitHash();
     out.length = 0;
     const s = this.hashSize, r2 = r * r;
     const x0 = Math.floor((x - r) / s), x1 = Math.floor((x + r) / s), y0 = Math.floor((y - r) / s), y1 = Math.floor((y + r) / s);

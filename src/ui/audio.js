@@ -41,7 +41,7 @@ export class Audio {
   play(name, vol = 1) {
     if (!this.ctx || !this.enabled || vol < 0.03) return;
     const now = performance.now();
-    const gap = { shard: 60, beam: 70, blast: 120, impact: 90, explode: 80, collapse: 300, deposit: 250, alert: 4000 }[name] || 40;
+    const gap = { shard: 60, beam: 70, blast: 120, impact: 90, explode: 80, collapse: 300, deposit: 250, alert: 4000, storm: 1500, comm: 300 }[name] || 40;
     if (now - (this.last.get(name) || 0) < gap) return;
     this.last.set(name, now);
     const v = vol;
@@ -59,6 +59,9 @@ export class Audio {
       case 'blast': this.burst(0.25, 0.25 * v, 900); this.tone('sine', 120, 50, 0.25, 0.2 * v); break;
       case 'impact': this.burst(0.4, 0.3 * v, 1400); break;
       case 'explode': this.burst(0.5, 0.35 * v, 1800); this.tone('sine', 90, 40, 0.4, 0.25 * v); break;
+      case 'storm': this.burst(2.5, 0.18 * v, 700, 0.7); this.burst(2.0, 0.08 * v, 4000, 1.5, 'bandpass'); break;
+      case 'comm': this.tone('sine', 1320, 1320, 0.05, 0.06 * v); this.tone('sine', 1760, 1760, 0.05, 0.05 * v, 0.07); break;
+      case 'objective': [659, 880].forEach((f, i) => this.tone('triangle', f, f, 0.16, 0.1 * v, i * 0.1)); break;
       case 'collapse': this.burst(1.2, 0.5 * v, 1200); this.tone('sine', 70, 30, 1.0, 0.35 * v); break;
     }
   }

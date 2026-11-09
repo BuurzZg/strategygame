@@ -70,6 +70,7 @@ defineTrait('Weavable', class Weavable extends Trait {
     self.owner.stats.structuresBuilt++;
     w.fx({ t: 'complete', actor: self.id, owner: self.owner.index });
     w.notify(self.owner, `${self.info.traitInfo('Tooltip').Name} woven`, 'good');
+    w.emit('built', self);
   }
 }, {});
 
@@ -138,6 +139,7 @@ defineTrait('ProductionQueue', class ProductionQueue extends Trait {
     self.owner.stats.unitsBuilt++;
     w.fx({ t: 'ready', actor: unit.id, owner: self.owner.index });
     this.dispatch(unit);
+    w.emit('produced', unit, self);
   }
 
   dispatch(unit) {

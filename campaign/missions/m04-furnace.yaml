@@ -1,0 +1,145 @@
+Mission:
+	Title: Furnace Line
+	Tagline: Break the Combine's forward base.
+	Location: The Furnace Line, east of the shelf
+	Briefing@1: The Deep Drill sits behind the Furnace Line, a ridge of fused glass the Combine has fortified for a month. Quill's forward base there builds everything that has been hitting us.
+	Briefing@2: You have a Core and a small garrison in the south-west. Build up, then destroy their Core and every Foundry they own. Without them, the drill site is exposed.
+	Briefing@3: The centre of the valley holds the richest vent we have seen. A Siphon there would pay for this war.
+	Objective@1: Destroy the Combine Core and every Foundry
+	Objective@2: Hold the central vent with a Siphon (optional)
+	Debrief@1: The forward base is burning. Prisoners say Quill pulled his best crews back to the drill site and has stopped answering his own captains.
+	Debrief@2: Aune is worried. The vent song has started to drift out of tune, all across the shelf at once.
+	FailText: The Combine has overrun our positions on the Furnace Line.
+	Map:
+		Size: 96
+		Seed: 4044
+		Rock: 26
+		Spawn@accord: 14,82
+		Spawn@combine: 82,14
+		Vent@a: 24,74
+		Vent@b: 12,64
+		Vent@centre: 48,48,130
+		Vent@c: 72,22
+		Vent@d: 84,32
+		Vent@e: 36,28
+		Vent@f: 62,70
+		Path@a: 14,82,48,48,2.5
+		Path@b: 48,48,82,14,2.5
+		Path@c: 14,82,36,28,2
+		Path@d: 36,28,82,14,2
+		Path@e: 14,82,62,70,2
+		Path@f: 62,70,82,14,2
+	Player@accord:
+		Name: Survey Group Halcyon
+		Faction: accord
+		Playable: true
+		Cash: 1000
+	Player@combine:
+		Name: Ochre Combine
+		Faction: combine
+		Bot: campaign
+		Cash: 600
+	Actor@core:
+		Type: core
+		Owner: accord
+		Cell: 13,81
+	Actor@s1:
+		Type: skimmer
+		Owner: accord
+		Cell: 18,78
+	Actor@s2:
+		Type: skimmer
+		Owner: accord
+		Cell: 19,80
+	Actor@s3:
+		Type: skimmer
+		Owner: accord
+		Cell: 12,76
+	Actor@w1:
+		Type: warden
+		Owner: accord
+		Cell: 20,76
+		Facing: 896
+	Actor@w2:
+		Type: warden
+		Owner: accord
+		Cell: 21,78
+		Facing: 896
+	Actor@w3:
+		Type: warden
+		Owner: accord
+		Cell: 19,74
+		Facing: 896
+	Actor@w4:
+		Type: warden
+		Owner: accord
+		Cell: 22,76
+		Facing: 896
+	Actor@n1:
+		Type: needle
+		Owner: accord
+		Cell: 18,73
+	Actor@n2:
+		Type: needle
+		Owner: accord
+		Cell: 23,79
+	Actor@quill_core:
+		Type: core
+		Owner: combine
+		Cell: 81,13
+	Actor@cres1:
+		Type: resonator
+		Owner: combine
+		Cell: 86,10
+	Actor@cres2:
+		Type: resonator
+		Owner: combine
+		Cell: 77,9
+	Actor@cfound1:
+		Type: foundry
+		Owner: combine
+		Cell: 75,15
+	Actor@cfound2:
+		Type: foundry
+		Owner: combine
+		Cell: 84,18
+	Actor@cspire1:
+		Type: spire
+		Owner: combine
+		Cell: 77,25
+	Actor@cspire2:
+		Type: spire
+		Owner: combine
+		Cell: 79,21
+	Actor@csiphon:
+		Type: siphon
+		Owner: combine
+		Cell: 66,24
+	Actor@cs1:
+		Type: skimmer
+		Owner: combine
+		Cell: 78,18
+	Actor@cs2:
+		Type: skimmer
+		Owner: combine
+		Cell: 80,19
+	Actor@cs3:
+		Type: skimmer
+		Owner: combine
+		Cell: 70,26
+	Actor@cw1:
+		Type: warden
+		Owner: combine
+		Cell: 72,24
+	Actor@cw2:
+		Type: warden
+		Owner: combine
+		Cell: 74,26
+	Actor@cw3:
+		Type: warden
+		Owner: combine
+		Cell: 70,20
+	Actor@cn1:
+		Type: needle
+		Owner: combine
+		Cell: 68,18
