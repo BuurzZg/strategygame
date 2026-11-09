@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Glasswake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!--GW:STYLE-->
+<style>
+/* Layout: full-bleed 3D field; HUD floats as a top status strip and a three-part bottom dock (minimap · selection · command card). */
+:root {
+  --ink: #0d0b14;
+  --panel: rgba(19, 16, 29, 0.88);
+  --panel-solid: #15121f;
+  --line: #3a3150;
+  --line-soft: #2a2339;
+  --text: #ebe5f2;
+  --muted: #a39ab4;
+  --res: #ff4fa0;
+  --team: #3fd8c6;
+  --good: #8dffa8;
+  --warn: #ffc861;
+  --bad: #ff6a6a;
+  --f-display: "Syne", "Avenir Next", "Segoe UI", sans-serif;
+  --f-body: "IBM Plex Sans Condensed", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--ink); color: var(--text); font: 14px/1.4 var(--f-body);
+  overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: none;
+}
+#app { position: fixed; inset: 0; }
+#view, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#overlay { pointer-events: none; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; }
+button:focus-visible { outline: 2px solid var(--team); outline-offset: 2px; }
+kbd { font: 500 10px var(--f-mono); color: var(--muted); }
+
+/* ---------- top bar ---------- */
+#topbar {
+  position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 28px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px));
+  background: rgba(13, 11, 20, 0.86); border-bottom: 1px solid var(--line-soft);
+  pointer-events: none;
+}
+.brand { font: 800 15px var(--f-display); letter-spacing: 0.32em; color: var(--team); }
+.stat { display: flex; flex-direction: column; line-height: 1.1; }
+.stat .lbl { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.stat .val { font: 500 18px var(--f-mono); font-variant-numeric: tabular-nums; }
+#st-res .val { color: var(--res); }
+.stat.capped .val { color: var(--bad); }
+#btn-menu {
+  margin-left: auto; pointer-events: auto; background: var(--panel); border: 1px solid var(--line);
+  padding: 6px 12px; border-radius: 3px; cursor: pointer; display: flex; gap: 8px; align-items: center;
+}
+#btn-menu:hover { border-color: var(--team); }
+
+/* ---------- toasts ---------- */
+#toasts { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: min(90vw, 460px); }
+.toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--muted); padding: 7px 14px; font-weight: 500; transition: opacity 0.5s, transform 0.5s; }
+.toast.good { border-left-color: var(--good); }
+.toast.bad { border-left-color: var(--bad); }
+.toast.info { border-left-color: var(--team); }
+.toast.out { opacity: 0; transform: translateY(-6px); }
+
+/* ---------- dock ---------- */
+#dock {
+  position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: end;
+  padding: 0 max(12px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  pointer-events: none;
+}
+#dock > * { pointer-events: auto; }
+#mini-wrap { background: var(--panel); border: 1px solid var(--line); padding: 6px; }
+#minimap { display: block; width: 188px; height: 188px; cursor: pointer; }
+#selpanel { background: var(--panel); border: 1px solid var(--line); min-height: 132px; padding: 12px 16px; max-width: 560px; justify-self: center; width: 100%; box-sizing: border-box; }
+#cmdpanel { background: var(--panel); border: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.cmd-group h3 { margin: 0 0 6px; font: 600 10px var(--f-body); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(4, 50px); gap: 5px; }
+.cmd {
+  position: relative; width: 50px; height: 50px; padding: 0; background: var(--panel-solid); border: 1px solid var(--line);
+  cursor: pointer; display: grid; place-items: center; transition: border-color 0.12s, background 0.12s;
+}
+.cmd svg { width: 26px; height: 26px; fill: none; stroke: var(--team); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.cmd kbd { position: absolute; top: 2px; left: 4px; }
+.cmd .cost { position: absolute; bottom: 1px; right: 4px; font: 500 10px var(--f-mono); color: var(--res); }
+.cmd .qn { position: absolute; top: 2px; right: 3px; font: 600 10px var(--f-mono); background: var(--team); color: var(--ink); padding: 0 4px; border-radius: 2px; }
+.cmd:hover { border-color: var(--team); background: #1d1930; }
+.cmd.active { border-color: var(--good); box-shadow: inset 0 0 0 1px var(--good); }
+.cmd.poor .cost { color: var(--bad); }
+.cmd.poor svg { opacity: 0.6; }
+.cmd.locked { cursor: not-allowed; }
+.cmd.locked svg { stroke: var(--muted); opacity: 0.35; }
+.cmd.locked .cost { opacity: 0.4; }
+.cmd.act svg { stroke: var(--text); }
+
+/* ---------- selection panel ---------- */
+.sel-empty h2, .sel-one h2 { margin: 0; font: 700 17px var(--f-display); letter-spacing: 0.04em; text-wrap: balance; }
+.sel-empty p { margin: 6px 0 10px; color: var(--muted); max-width: 60ch; }
+.mini-stats, .facts { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0; }
+.mini-stats div, .facts div { display: flex; flex-direction: column; }
+dt { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+dd { margin: 0; font: 500 13px var(--f-mono); font-variant-numeric: tabular-nums; }
+.sel-one { display: flex; gap: 14px; }
+.portrait { width: 64px; height: 64px; flex: none; border: 1px solid var(--line); display: grid; place-items: center; background: var(--panel-solid); }
+.portrait svg { width: 40px; height: 40px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; }
+.sel-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.sel-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.tag { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c); }
+.hp { display: flex; align-items: center; gap: 10px; font: 500 12px var(--f-mono); }
+.bar { flex: 1; height: 6px; background: #241e33; position: relative; overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; background: var(--good); }
+.bar.mid i { background: var(--warn); }
+.bar.low i { background: var(--bad); }
+.bar.res i { background: var(--res); }
+.prog { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.prog .bar i { background: var(--team); }
+.queue { display: flex; gap: 5px; }
+.qslot { width: 34px; height: 34px; border: 1px solid var(--line); background: var(--panel-solid); position: relative; display: grid; place-items: center; padding: 0; cursor: pointer; overflow: hidden; }
+.qslot svg { width: 20px; height: 20px; fill: none; stroke: var(--team); stroke-width: 1.5; position: relative; z-index: 1; }
+.qslot i { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--team) 30%, transparent); }
+.qslot.empty { cursor: default; opacity: 0.4; }
+.qslot:not(.empty):hover { border-color: var(--bad); }
+.sel-summary { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.unit-chip { width: 34px; height: 34px; background: var(--panel-solid); border: 1px solid var(--line); position: relative; padding: 0; display: grid; place-items: center; cursor: pointer; }
+.unit-chip svg { width: 22px; height: 22px; fill: none; stroke: var(--team); stroke-width: 1.5; }
+.unit-chip i { position: absolute; left: 0; bottom: 0; height: 3px; }
+.unit-chip:hover { border-color: var(--team); }
+
+/* ---------- tooltip ---------- */
+#tooltip { position: fixed; z-index: 30; max-width: 280px; background: var(--panel-solid); border: 1px solid var(--line); padding: 10px 12px; pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+#tooltip strong { font: 700 14px var(--f-display); }
+#tooltip em { display: block; font-style: normal; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+#tooltip p { margin: 6px 0 0; color: var(--muted); }
+#tooltip .req { color: var(--bad); }
+.tip-stats { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 6px; font: 500 11px var(--f-mono); color: var(--text); }
+.tip-stats span:first-child { color: var(--res); }
+
+/* ---------- screens ---------- */
+.screen {
+  position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: radial-gradient(ellipse at 30% 40%, rgba(13, 11, 20, 0.35), rgba(13, 11, 20, 0.85));
+}
+.screen .card { width: min(100%, 720px); display: flex; flex-direction: column; gap: 22px; }
+#title-screen { background: linear-gradient(100deg, rgba(10, 8, 16, 0.92) 0%, rgba(10, 8, 16, 0.7) 45%, rgba(10, 8, 16, 0.05) 100%); place-items: center start; }
+#title-screen .card { width: min(100%, 600px); margin-left: clamp(0px, 6vw, 90px); }
+.title {
+  margin: 0; font: 800 clamp(28px, 4.3vw, 60px)/0.95 var(--f-display); letter-spacing: 0.04em; white-space: nowrap; width: max-content;
+  background: linear-gradient(120deg, #f6eefc 10%, #ff9fcd 45%, #ff4fa0 60%, #8a7aa8 90%); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.lede { margin: 0; max-width: 46ch; color: var(--muted); font-size: 16px; line-height: 1.5; }
+.field-label { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.factions { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.faction {
+  text-align: left; background: var(--panel); border: 1px solid var(--line); padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
+  border-top: 3px solid var(--c);
+}
+.faction strong { font: 700 16px var(--f-display); color: var(--c); }
+.faction span { color: var(--muted); font-size: 13px; }
+.faction[aria-pressed="true"] { background: color-mix(in srgb, var(--c) 12%, var(--panel-solid)); border-color: var(--c); }
+.chips-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { background: var(--panel); border: 1px solid var(--line); padding: 7px 14px; cursor: pointer; }
+.chip[aria-pressed="true"] { border-color: var(--text); background: #2a2340; }
+.row { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
+.seed { display: flex; gap: 6px; }
+.seed input { width: 110px; background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 7px 10px; font: 500 13px var(--f-mono); }
+.primary {
+  align-self: flex-start; background: var(--res); color: #1a0812; border: 0; padding: 13px 30px; font: 700 15px var(--f-display); letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer;
+}
+.primary:hover { filter: brightness(1.1); }
+.secondary { background: transparent; border: 1px solid var(--line); padding: 12px 22px; cursor: pointer; font-weight: 600; }
+.secondary:hover { border-color: var(--text); }
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 4px 20px; margin: 0; font-size: 13px; color: var(--muted); }
+.keys div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line-soft); padding: 3px 0; }
+.keys kbd { color: var(--text); font-size: 11px; white-space: nowrap; }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.panel-card { background: var(--panel-solid); border: 1px solid var(--line); padding: 26px; }
+.panel-card h2 { margin: 0; font: 800 34px var(--f-display); letter-spacing: 0.08em; }
+.end-title.victory { color: var(--good); }
+.end-title.defeat { color: var(--bad); }
+.stats-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.stats-table th, .stats-table td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); }
+.stats-table th:first-child, .stats-table td:first-child { text-align: left; color: var(--muted); font-weight: 400; }
+.stats-table thead th { font: 700 13px var(--f-display); }
+.slider { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.slider input { accent-color: var(--team); }
+.touch-note { display: none; color: var(--warn); font-size: 13px; }
+@media (pointer: coarse) { .touch-note { display: block; } }
+
+@media (max-width: 900px) {
+  #minimap { width: 140px; height: 140px; }
+  .grid { grid-template-columns: repeat(4, 42px); }
+  .cmd { width: 42px; height: 42px; }
+  .cmd svg { width: 22px; height: 22px; }
+  .facts, .sel-empty p, .mini-stats { display: none; }
+  #selpanel { min-height: 0; padding: 8px 10px; }
+  #topbar { gap: 16px; }
+}
+@media (max-width: 640px) {
+  #dock { grid-template-columns: auto minmax(0, 1fr); }
+  #selpanel { display: none; }
+  #mini-wrap { align-self: end; }
+  #minimap { width: 110px; height: 110px; }
+  .brand { display: none; }
+  #btn-menu kbd { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+<!--GW:STYLE-END-->
+</head>
+<body>
+<!--GW:BODY-->
+<div id="app">
+  <canvas id="view"></canvas>
+  <canvas id="overlay"></canvas>
+
+  <div id="hud" hidden>
+    <header id="topbar">
+      <div class="brand">GLASSWAKE</div>
+      <div class="stat" id="st-res"><span class="lbl">Resonance</span><span class="val" id="res-val">0</span></div>
+      <div class="stat" id="st-sup"><span class="lbl">Supply</span><span class="val" id="sup-val">0 / 0</span></div>
+      <div class="stat"><span class="lbl">Elapsed</span><span class="val" id="time-val">00:00</span></div>
+      <button id="btn-menu" type="button">Menu <kbd>Esc</kbd></button>
+    </header>
+    <div id="toasts" aria-live="polite"></div>
+    <footer id="dock">
+      <div id="mini-wrap"><canvas id="minimap" width="376" height="376" aria-label="Minimap"></canvas></div>
+      <section id="selpanel" aria-label="Selection"></section>
+      <section id="cmdpanel" aria-label="Commands">
+        <div class="cmd-group"><h3>Weave</h3><div id="build-grid" class="grid"></div></div>
+        <div class="cmd-group" id="prod-wrap" hidden><h3>Train</h3><div id="prod-grid" class="grid"></div></div>
+        <div class="cmd-group" id="act-wrap" hidden><h3>Orders</h3><div id="act-grid" class="grid"></div></div>
+      </section>
+    </footer>
+  </div>
+  <div id="tooltip" hidden></div>
+
+  <div id="title-screen" class="screen">
+    <div class="card">
+      <h1 class="title">GLASSWAKE</h1>
+      <p class="lede">The dunes of Veyl were fused to glass by a fire no one remembers. Now the vents beneath them sing, and two survey consortia want the song. Harvest resonance, weave your lattice, break theirs.</p>
+      <div>
+        <div class="field-label">Consortium</div>
+        <div class="factions" id="faction-pick">
+          <button type="button" class="faction" data-f="accord" aria-pressed="true" style="--c:#3fd8c6"><strong>Halcyon Accord</strong><span>Survey mandate from the northern shelf. Cold optics, patient doctrine.</span></button>
+          <button type="button" class="faction" data-f="combine" aria-pressed="false" style="--c:#f09a3a"><strong>Ochre Combine</strong><span>Salvage guilds of the furnace basins. Loud engines, short contracts.</span></button>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <div class="field-label">Opponent</div>
+          <div class="chips-row" id="diff-pick">
+            <button type="button" class="chip" data-d="easy" aria-pressed="false">Easy</button>
+            <button type="button" class="chip" data-d="normal" aria-pressed="true">Normal</button>
+            <button type="button" class="chip" data-d="hard" aria-pressed="false">Hard</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">Map seed</div>
+          <div class="seed"><input id="seed-input" type="number" min="1" max="99999" value="1207" aria-label="Map seed"><button type="button" class="chip" id="seed-roll">Roll</button></div>
+        </div>
+      </div>
+      <button type="button" class="primary" id="btn-start">Make landfall</button>
+      <p class="touch-note">Glasswake plays best with a mouse and keyboard. On touch: tap to select, tap the ground to order, drag to pan, pinch to zoom.</p>
+      <details>
+        <summary>Controls</summary>
+        <dl class="keys" id="keys-list"></dl>
+      </details>
+    </div>
+  </div>
+
+  <div id="pause-screen" class="screen" hidden>
+    <div class="card panel-card">
+      <h2>Paused</h2>
+      <div class="row">
+        <button type="button" class="primary" id="btn-resume">Resume</button>
+        <button type="button" class="secondary" id="btn-restart">Restart map</button>
+        <button type="button" class="secondary" id="btn-quit">Quit to title</button>
+      </div>
+      <div class="row">
+        <label class="slider" for="vol">Volume <input id="vol" type="range" min="0" max="100" value="50"></label>
+        <label class="slider" for="edge"><input id="edge" type="checkbox" checked> Edge scrolling</label>
+        <label class="slider" for="speed">Game speed
+          <select id="speed"><option value="0.75">Slow</option><option value="1" selected>Normal</option><option value="1.5">Fast</option></select>
+        </label>
+      </div>
+      <dl class="keys" id="keys-list-2"></dl>
+    </div>
+  </div>
+
+  <div id="end-screen" class="screen" hidden>
+    <div class="card panel-card">
+      <h2 class="end-title" id="end-title">Victory</h2>
+      <p class="lede" id="end-lede"></p>
+      <table class="stats-table" id="end-stats"></table>
+      <div class="row">
+        <button type="button" class="primary" id="btn-again">New map</button>
+        <button type="button" class="secondary" id="btn-title">Title</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
+<!--GW:BODY-END-->
+</body>
+</html>
