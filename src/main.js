@@ -1,11 +1,17 @@
 import * as THREE from '../lib/three.module.js';
-import { World } from './game.js';
-import { CameraRig, Input } from './input.js';
-import { UI } from './ui.js';
-import { Audio } from './audio.js';
-import { FACTIONS, WORLD, UNITS, BUILDINGS, DIFFICULTY } from './config.js';
+import './traits/index.js';
+import { loadRules } from './engine/rules.js';
+import { GameMap } from './engine/map.js';
+import { World } from './engine/world.js';
+import { OrderManager, LocalConnection, ReplayConnection, TICK_MS } from './engine/ordermanager.js';
+import { NetClient, defaultRelayUrl } from './engine/netclient.js';
+import { WorldRenderer, R } from './render/worldrenderer.js';
+import { CameraRig, Input } from './ui/input.js';
+import { Hud } from './ui/hud.js';
+import { Audio } from './ui/audio.js';
 
 const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
 const canvas = $('view');
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -18,13 +24,16 @@ renderer.toneMappingExposure = 1.25;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, 1, 1, 700);
 const audio = new Audio();
-const ui = new UI(audio);
+const hud = new Hud(audio);
 
-let world = null, input = null, rig = null, sun = null;
-let state = 'title';
-let speed = 1;
-let settings = { faction: 'accord', difficulty: 'normal', seed: 1207 };
-let demoT = 0;
+let rules = null;
+let session = null;
+let input = null;
+let sun = null;
+let acc = 0;
+let net = null;
+const settings = { faction: 'accord', difficulty: 'normal', seed: 1207, name: '' };
+try { settings.name = localStorage.getItem('gw-name') || ''; } catch {}
 
 function setupScene() {
   scene.clear();
@@ -39,11 +48,10 @@ function setupScene() {
   sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.6;
   scene.add(sun, sun.target);
   const rim = new THREE.DirectionalLight(0x6f5cff, 0.6);
-  rim.position.set(WORLD, 60, 0);
+  rim.position.set(192, 60, 0);
   scene.add(rim);
-  // dark glass sea beyond the map edge
-  const under = new THREE.Mesh(new THREE.PlaneGeometry(WORLD * 5, WORLD * 5), new THREE.MeshStandardMaterial({ color: 0x120e1c, roughness: 0.3, metalness: 0.7 }));
-  under.rotation.x = -Math.PI / 2; under.position.set(WORLD / 2, -1.2, WORLD / 2);
+  const under = new THREE.Mesh(new THREE.PlaneGeometry(960, 960), new THREE.MeshStandardMaterial({ color: 0x120e1c, roughness: 0.3, metalness: 0.7 }));
+  under.rotation.x = -Math.PI / 2; under.position.set(96, -1.2, 96);
   scene.add(under);
 }
 
@@ -52,157 +60,332 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  ui.resize(w, h, Math.min(2, window.devicePixelRatio || 1));
-  if (world) {
+  hud.resize(w, h, Math.min(2, window.devicePixelRatio || 1));
+  if (session) {
     const scale = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
-    world.fx.glow.points.material.uniforms.scale.value = scale;
-    world.fx.smoke.points.material.uniforms.scale.value = scale;
+    session.renderer.fx.glow.points.material.uniforms.scale.value = scale;
+    session.renderer.fx.smoke.points.material.uniforms.scale.value = scale;
   }
 }
 window.addEventListener('resize', resize);
 
+function show(screen) {
+  for (const id of ['title-screen', 'mp-screen', 'lobby-screen', 'pause-screen', 'end-screen']) $(id).hidden = id !== screen;
+  $('hud').hidden = screen !== null;
+}
+
+// ---------------------------------------------------------------- sessions
 function teardown() {
   if (input) input.dispose();
   input = null;
-  world = null;
+  session = null;
+  acc = 0;
+  lastPump = performance.now();
+}
+
+function startSession({ gameSettings, localClient, connection, mode }) {
+  teardown();
+  setupScene();
+  const world = new World(rules, new GameMap(gameSettings.seed), gameSettings);
+  const viewer = mode === 'demo' || mode === 'replay' ? null : world.players.find((p) => p.clientIndex === localClient) || null;
+  const clients = gameSettings.players.filter((p) => p.client !== undefined && p.client >= 0).map((p) => p.client);
+  const om = new OrderManager(world, connection, { localClient, clients, latency: gameSettings.latency ?? 1, record: mode !== 'demo' && mode !== 'replay' });
+  if (connection instanceof ReplayConnection) connection.attach(om);
+  if (connection.flushBacklog) connection.flushBacklog();
+  om.onDesync = (d) => console.warn('Desync', d);
+  const rig = new CameraRig(camera, world.map);
+  const s = { world, om, viewer, rig, mode, over: false, speed: 1, connection };
+  const rd = new WorldRenderer(scene, world, viewer, {
+    reveal: mode === 'demo' || params.has('reveal'),
+    sfx: (name, x, y, flat) => {
+      if (mode === 'demo') return;
+      const d = Math.hypot(x * R - rig.tx, y * R - rig.tz);
+      audio.play(name, flat ? 0.9 : Math.max(0, 1 - d / 110) * (rig.dist < 60 ? 1 : 0.7));
+    },
+    onNotify: (text, kind) => hud.toast(text, kind),
+  });
+  s.renderer = rd;
+  session = s;
+  if (mode !== 'demo') {
+    input = new Input(canvas, s, hud, audio);
+    input.edgeScroll = $('edge').checked;
+    hud.attach(s, input);
+  }
+  const core = world.actors.find((a) => a.type === 'core' && (!viewer || a.owner === viewer));
+  if (viewer && core) rig.jumpWorld(core.x + 5 * 1024 * (core.x < world.map.n * 512 ? 1 : -1), core.y + 5 * 1024 * (core.y < world.map.n * 512 ? 1 : -1));
+  if (viewer && core && core.x > world.map.n * 512) rig.yaw = Math.PI * 0.25;
+  if (mode === 'demo') { rig.jump(80, 80); rig.distT = rig.dist = 95; }
+  resize();
+  rd.consumeEvents(world.fxEvents.splice(0));
+  return s;
 }
 
 function startDemo() {
-  teardown();
-  setupScene();
-  state = 'title';
-  world = new World(scene, { faction: 'accord', difficulty: 'normal', seed: 4242, demo: true, reveal: true });
-  rig = new CameraRig(camera, world.map);
-  rig.jump(WORLD * 0.42, WORLD * 0.42);
-  rig.distT = rig.dist = 95;
-  demoT = 0;
-  resize();
-  $('hud').hidden = true;
-  $('title-screen').hidden = false;
-  $('end-screen').hidden = true;
-  $('pause-screen').hidden = true;
+  if (net) { net.close(); net = null; }
+  startSession({
+    gameSettings: { seed: 4242, players: [{ name: 'Accord', faction: 'accord', bot: 'normal' }, { name: 'Combine', faction: 'combine', bot: 'normal' }] },
+    localClient: -1, connection: new LocalConnection(), mode: 'demo',
+  });
+  show('title-screen');
 }
 
-function startGame() {
+function startSinglePlayer() {
   audio.init();
-  teardown();
-  setupScene();
-  state = 'play';
-  world = new World(scene, { ...settings, reveal: new URLSearchParams(location.search).has('reveal') });
-  rig = new CameraRig(camera, world.map);
-  const core = world.entities.find((e) => e.team === 0 && e.type === 'core');
-  rig.jump(core.x + 10, core.z + 10);
-  input = new Input(canvas, world, rig, ui, audio);
-  input.edgeScroll = $('edge').checked;
-  ui.attach(world, input, rig);
-  world.sfx = (name, x, z, flat) => {
-    const d = Math.hypot(x - rig.tx, z - rig.tz);
-    audio.play(name, flat ? 0.9 : Math.max(0, 1 - d / 110) * (rig.dist < 60 ? 1 : 0.7));
-  };
-  resize();
-  $('hud').hidden = false;
-  $('title-screen').hidden = true;
-  $('end-screen').hidden = true;
-  $('pause-screen').hidden = true;
-  ui.toast('Landfall. Your Core is weaving the lattice.', 'info');
-  ui.toast('Tip: weave a Foundry (F), then a Resonator (R) before supply caps.', 'info');
+  const other = settings.faction === 'accord' ? 'combine' : 'accord';
+  startSession({
+    gameSettings: {
+      seed: settings.seed, latency: 1, mode: 'skirmish',
+      players: [{ name: settings.name || 'You', faction: settings.faction, client: 0 }, { name: `Bot (${settings.difficulty})`, faction: other, bot: settings.difficulty }],
+    },
+    localClient: 0, connection: new LocalConnection(), mode: 'skirmish',
+  });
+  show(null);
+  hud.toast('Landfall. Your Core is weaving the lattice.', 'info');
+  hud.toast('Tip: weave a Foundry (F), then a Resonator (R) before supply caps.', 'info');
+}
+
+function startReplay(replay) {
+  audio.init();
+  startSession({ gameSettings: replay.settings, localClient: -1, connection: new ReplayConnection(replay), mode: 'replay' });
+  show(null);
+  hud.toast('Watching replay. Use the speed control at the top.', 'info');
 }
 
 function showEnd() {
-  state = 'end';
-  const v = world.over === 'victory';
-  const t = $('end-title');
-  t.textContent = v ? 'Victory' : 'Defeat';
-  t.className = `end-title ${v ? 'victory' : 'defeat'}`;
-  const mins = Math.floor(world.time / 60), secs = Math.floor(world.time % 60);
-  $('end-lede').textContent = v
-    ? `The ${world.teams[1].faction.name} lattice is broken after ${mins}m ${secs}s. The vents sing for you now.`
-    : `Your last structure fell after ${mins}m ${secs}s. The ${world.teams[1].faction.name} holds the dunes.`;
-  const rows = [['Resonance harvested', 'harvested'], ['Units trained', 'unitsBuilt'], ['Units lost', 'unitsLost'], ['Structures woven', 'structuresBuilt'], ['Structures lost', 'structuresLost'], ['Kills', 'kills']];
-  const [a, b] = world.teams;
-  $('end-stats').innerHTML = `<thead><tr><th></th><th style="color:${a.faction.css}">${a.faction.name}</th><th style="color:${b.faction.css}">${b.faction.name}</th></tr></thead><tbody>${rows.map(([l, k]) => `<tr><td>${l}</td><td>${a.stats[k]}</td><td>${b.stats[k]}</td></tr>`).join('')}</tbody>`;
-  $('end-screen').hidden = false;
-  $('hud').hidden = true;
+  const s = session;
+  s.over = true;
   if (input) input.cancelMode();
+  const w = s.world;
+  let title, cls, lede;
+  const mins = Math.floor(w.frame / 1500), secs = Math.floor((w.frame / 25) % 60);
+  if (s.viewer) {
+    const won = s.viewer.outcome === 'won';
+    title = won ? 'Victory' : 'Defeat'; cls = won ? 'victory' : 'defeat';
+    const foes = w.players.filter((p) => s.viewer.isEnemy(p)).map((p) => p.name).join(', ');
+    lede = won ? `${foes}: lattice broken after ${mins}m ${secs}s. The vents sing for you now.` : `Your last structure fell after ${mins}m ${secs}s.`;
+  } else {
+    const winner = w.players.find((p) => p.outcome === 'won');
+    title = 'Replay finished'; cls = '';
+    lede = winner ? `${winner.name} won after ${mins}m ${secs}s.` : `Replay ended at ${mins}m ${secs}s.`;
+  }
+  const t = $('end-title');
+  t.textContent = title; t.className = `end-title ${cls}`;
+  $('end-lede').textContent = lede;
+  const rows = [['Resonance harvested', 'harvested'], ['Units trained', 'unitsBuilt'], ['Units lost', 'unitsLost'], ['Structures woven', 'structuresBuilt'], ['Structures lost', 'structuresLost'], ['Kills', 'kills']];
+  $('end-stats').innerHTML = `<thead><tr><th></th>${w.players.map((p) => `<th style="color:${s.renderer.styleOf(p).css}">${p.name}</th>`).join('')}</tr></thead><tbody>${rows.map(([l, k]) => `<tr><td>${l}</td>${w.players.map((p) => `<td>${p.stats[k]}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  $('btn-save-replay').hidden = !s.om.replay;
+  $('btn-again').hidden = s.mode !== 'skirmish';
+  show('end-screen');
 }
 
-// ------------------------------------------------------------ title screen wiring
+function saveReplay() {
+  const r = session && session.om.replay;
+  if (!r) return;
+  const blob = new Blob([JSON.stringify(r)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `glasswake-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.gwreplay.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  hud.toast('Replay saved', 'good');
+}
+
+function leaveGame() {
+  if (session && session.mode === 'multiplayer' && session.viewer && !session.viewer.outcome && input) input.issue('Surrender', []);
+  setTimeout(startDemo, session && session.mode === 'multiplayer' ? 300 : 0);
+}
+
+// ---------------------------------------------------------------- multiplayer lobby
+async function relayAvailable() {
+  try { const r = await fetch('relay.json', { cache: 'no-store' }); return r.ok && (await r.json()).relay; } catch { return false; }
+}
+
+async function connectRelay() {
+  const name = $('mp-name').value.trim() || 'Player';
+  settings.name = name;
+  try { localStorage.setItem('gw-name', name); } catch {}
+  if (net) net.close();
+  net = new NetClient($('mp-url').value.trim() || defaultRelayUrl());
+  net.onLobby = renderLobby;
+  net.onError = (m) => { $('mp-error').textContent = m; $('lobby-error').textContent = m; };
+  net.onClose = () => { if (!session || session.mode !== 'multiplayer') { $('mp-error').textContent = 'Disconnected from the relay.'; show('mp-screen'); } else hud.toast('Connection to the relay was lost', 'bad'); };
+  net.onStart = (gs) => {
+    audio.init();
+    startSession({ gameSettings: gs, localClient: net.client, connection: net, mode: 'multiplayer' });
+    show(null);
+    hud.toast('Match started. Orders reach everyone after a short delay.', 'info');
+  };
+  await net.connect();
+  return name;
+}
+
+function renderLobby(l) {
+  show('lobby-screen');
+  const me = net.client, host = l.host === me;
+  $('lobby-code').textContent = l.room;
+  $('lobby-seed').value = l.seed; $('lobby-seed').disabled = !host;
+  const nameOf = (id) => l.clients.find((c) => c.id === id);
+  $('lobby-slots').innerHTML = l.slots.map((s, i) => {
+    if (s.kind === 'client') {
+      const c = nameOf(s.client) || { name: '?', faction: 'accord' };
+      const mine = s.client === me;
+      const fac = mine
+        ? `<select data-own-faction aria-label="Your consortium"><option value="accord"${c.faction === 'accord' ? ' selected' : ''}>Halcyon Accord</option><option value="combine"${c.faction === 'combine' ? ' selected' : ''}>Ochre Combine</option></select>`
+        : `<span class="fac ${c.faction}">${c.faction === 'accord' ? 'Halcyon Accord' : 'Ochre Combine'}</span>`;
+      return `<div class="slot"><span class="slot-n">${i + 1}</span><strong>${c.name}${s.client === l.host ? ' <em>host</em>' : ''}${mine ? ' <em>you</em>' : ''}</strong>${fac}</div>`;
+    }
+    const kind = s.kind === 'bot' ? s.bot : 'open';
+    const ctl = host
+      ? `<select data-slot="${i}" aria-label="Slot ${i + 1}"><option value="open"${kind === 'open' ? ' selected' : ''}>Open</option><option value="easy"${kind === 'easy' ? ' selected' : ''}>Bot: easy</option><option value="normal"${kind === 'normal' ? ' selected' : ''}>Bot: normal</option><option value="hard"${kind === 'hard' ? ' selected' : ''}>Bot: hard</option></select>
+         ${s.kind === 'bot' ? `<select data-bot-faction="${i}" data-bot="${s.bot}" aria-label="Bot consortium"><option value="accord"${s.faction === 'accord' ? ' selected' : ''}>Halcyon Accord</option><option value="combine"${s.faction === 'combine' ? ' selected' : ''}>Ochre Combine</option></select>` : ''}`
+      : `<span class="muted">${s.kind === 'bot' ? `Bot (${s.bot})` : 'Waiting for a player…'}</span>`;
+    return `<div class="slot"><span class="slot-n">${i + 1}</span><strong>${s.kind === 'bot' ? 'Bot' : 'Open'}</strong>${ctl}</div>`;
+  }).join('');
+  const spect = l.clients.filter((c) => !l.slots.some((s) => s.kind === 'client' && s.client === c.id));
+  $('lobby-spect').textContent = spect.length ? `Spectators: ${spect.map((c) => c.name).join(', ')}` : '';
+  $('btn-lobby-start').hidden = !host;
+  $('btn-lobby-start').disabled = l.slots.some((s) => s.kind === 'open');
+  $('lobby-wait').hidden = host;
+  $('lobby-error').textContent = '';
+}
+
+$('lobby-slots').addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.dataset.ownFaction !== undefined) net.update({ faction: t.value });
+  else if (t.dataset.slot !== undefined) net.update({ slot: +t.dataset.slot, slotKind: t.value, botFaction: 'combine' });
+  else if (t.dataset.botFaction !== undefined) net.update({ slot: +t.dataset.botFaction, slotKind: t.dataset.bot, botFaction: t.value });
+});
+$('lobby-seed').addEventListener('change', (e) => net && net.update({ seed: parseInt(e.target.value, 10) || 1 }));
+$('btn-lobby-start').addEventListener('click', () => net && net.start());
+$('btn-lobby-leave').addEventListener('click', () => { if (net) net.close(); net = null; show('mp-screen'); });
+
+$('btn-mp').addEventListener('click', async () => {
+  show('mp-screen');
+  $('mp-name').value = settings.name;
+  if (!$('mp-url').value) $('mp-url').value = defaultRelayUrl();
+  $('mp-error').textContent = '';
+  $('mp-note').hidden = await relayAvailable();
+});
+$('btn-mp-back').addEventListener('click', () => { if (net) net.close(); net = null; show('title-screen'); });
+$('btn-host').addEventListener('click', async () => {
+  $('mp-error').textContent = '';
+  try { const name = await connectRelay(); net.host(name); } catch (e) { $('mp-error').textContent = e.message; }
+});
+$('btn-join').addEventListener('click', async () => {
+  const code = $('mp-code').value.trim();
+  if (!code) { $('mp-error').textContent = 'Enter the 4-letter game code from the host.'; return; }
+  $('mp-error').textContent = '';
+  try { const name = await connectRelay(); net.join(code, name); } catch (e) { $('mp-error').textContent = e.message; }
+});
+
+// ---------------------------------------------------------------- title + menus
 function pressGroup(container, attr, value) {
   for (const b of container.querySelectorAll(`[${attr}]`)) b.setAttribute('aria-pressed', String(b.getAttribute(attr) === value));
 }
-$('faction-pick').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-f]'); if (!b) return;
-  settings.faction = b.dataset.f; pressGroup($('faction-pick'), 'data-f', b.dataset.f);
-});
-$('diff-pick').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-d]'); if (!b) return;
-  settings.difficulty = b.dataset.d; pressGroup($('diff-pick'), 'data-d', b.dataset.d);
-});
+$('faction-pick').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (!b) return; settings.faction = b.dataset.f; pressGroup($('faction-pick'), 'data-f', b.dataset.f); });
+$('diff-pick').addEventListener('click', (e) => { const b = e.target.closest('[data-d]'); if (!b) return; settings.difficulty = b.dataset.d; pressGroup($('diff-pick'), 'data-d', b.dataset.d); });
 $('seed-roll').addEventListener('click', () => { $('seed-input').value = 1 + Math.floor(Math.random() * 99998); });
-$('btn-start').addEventListener('click', () => {
-  settings.seed = Math.max(1, Math.min(99999, parseInt($('seed-input').value, 10) || 1207));
-  startGame();
+$('btn-start').addEventListener('click', () => { settings.seed = Math.max(1, Math.min(99999, parseInt($('seed-input').value, 10) || 1207)); startSinglePlayer(); });
+$('replay-file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const r = JSON.parse(await f.text());
+    if (r.version !== 2 || !r.settings || !Array.isArray(r.frames)) throw new Error('Not a Glasswake replay');
+    startReplay(r);
+  } catch (err) { alertTitle(err.message); }
 });
-$('btn-menu').addEventListener('click', () => ui.togglePause(true));
-$('btn-resume').addEventListener('click', () => ui.togglePause(false));
-$('btn-restart').addEventListener('click', () => startGame());
-$('btn-quit').addEventListener('click', () => startDemo());
-$('btn-again').addEventListener('click', () => { settings.seed = 1 + Math.floor(Math.random() * 99998); $('seed-input').value = settings.seed; startGame(); });
+function alertTitle(msg) { $('title-error').textContent = msg; }
+$('btn-menu').addEventListener('click', () => hud.togglePause(true));
+$('btn-resume').addEventListener('click', () => hud.togglePause(false));
+$('btn-restart').addEventListener('click', () => startSinglePlayer());
+$('btn-quit').addEventListener('click', () => leaveGame());
+$('btn-again').addEventListener('click', () => { settings.seed = 1 + Math.floor(Math.random() * 99998); $('seed-input').value = settings.seed; startSinglePlayer(); });
 $('btn-title').addEventListener('click', () => startDemo());
+$('btn-save-replay').addEventListener('click', saveReplay);
 $('vol').addEventListener('input', (e) => audio.setVolume(e.target.value / 100));
 $('edge').addEventListener('change', (e) => { if (input) input.edgeScroll = e.target.checked; });
-$('speed').addEventListener('change', (e) => { speed = parseFloat(e.target.value) || 1; });
+$('speed').addEventListener('change', (e) => { if (session && session.mode !== 'multiplayer') session.speed = parseFloat(e.target.value) || 1; });
+$('replay-speed').addEventListener('change', (e) => { if (session && session.mode === 'replay') session.speed = parseFloat(e.target.value) || 1; });
 
 const KEYS = [
-  ['Select / box select', 'Left drag'], ['Move · attack · harvest', 'Right click'], ['Add to selection', 'Shift + click'],
-  ['Select all of a type on screen', 'Double click'], ['Attack-move', 'A'], ['Stop · Hold', 'S · H'],
-  ['Control group set · recall', 'Ctrl+1–9 · 1–9'], ['Jump to alert / Core', 'Space'], ['Pan', 'Arrows · edges · middle drag'],
-  ['Rotate camera', 'Q · E · Alt+middle drag'], ['Zoom', 'Wheel'], ['Recycle structure', 'X'],
+  ['Select / box select', 'Left drag'], ['Move · attack · harvest', 'Right click'], ['Queue an order', 'Shift + right click'],
+  ['Add to selection', 'Shift + click'], ['Select all of a type on screen', 'Double click'], ['Attack-move', 'A'], ['Stop', 'S'],
+  ['Stance: hold ground · engage', 'H · G'], ['Control group set · recall', 'Ctrl+1–9 · 1–9'], ['Jump to alert / Core', 'Space'],
+  ['Pan', 'Arrows · edges · middle drag'], ['Rotate camera', 'Q · E · Alt+middle drag'], ['Zoom', 'Wheel'], ['Recycle structure', 'X'],
   ['Keep placing', 'Shift + click'], ['Cancel · menu', 'Esc'],
-  ...Object.values(BUILDINGS).map((d) => [`Weave ${d.name}`, d.key]),
-  ...Object.values(UNITS).map((d) => [`Train ${d.name}`, d.key]),
 ];
-const keysHtml = KEYS.map(([a, b]) => `<div><dt>${a}</dt><dd><kbd>${b}</kbd></dd></div>`).join('');
-$('keys-list').innerHTML = keysHtml;
-$('keys-list-2').innerHTML = keysHtml;
 
-// ------------------------------------------------------------ loop
-let last = performance.now();
-let elapsed = 0;
+// ---------------------------------------------------------------- loop
+// The simulation is pumped from a timer as well as from animation frames, so a slow
+// renderer (or a background tab, where animation frames stop) doesn't hold up the other
+// players in a lockstep match.
+let lastPump = performance.now();
+const isRunning = (s) => !s.over && (s.mode === 'multiplayer' || !hud.paused);
+function pump() {
+  const now = performance.now();
+  const dt = Math.min(1000, now - lastPump);
+  lastPump = now;
+  const s = session;
+  if (!s || !isRunning(s)) return;
+  acc += dt * s.speed;
+  const maxSteps = s.mode === 'replay' ? 64 : 25;
+  let n = 0;
+  while (acc >= TICK_MS && n < maxSteps) {
+    if (!s.om.tryTick()) { acc = Math.min(acc, TICK_MS); break; }
+    acc -= TICK_MS; n++;
+  }
+  if (n >= maxSteps) acc = Math.min(acc, TICK_MS);
+}
+setInterval(pump, 10);
+
+let last = performance.now(), elapsed = 0, demoT = 0;
 function frame(now) {
   requestAnimationFrame(frame);
-  let dt = Math.min(0.1, (now - last) / 1000);
-  last = now;
-  elapsed += dt;
-  if (!world) return;
-  if (state === 'title') {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now; elapsed += dt;
+  const s = session;
+  if (!s) return;
+  pump();
+  const running = isRunning(s);
+  const alpha = s.om.stalled || !running ? 1 : Math.min(1, acc / TICK_MS);
+  s.renderer.consumeEvents(s.world.fxEvents.splice(0));
+  if (s.mode === 'demo') {
     demoT += dt;
-    rig.yaw = -Math.PI * 0.75 + Math.sin(demoT * 0.05) * 0.6;
-    rig.tx = WORLD * 0.5 + Math.sin(demoT * 0.03) * WORLD * 0.18;
-    rig.tz = WORLD * 0.5 + Math.cos(demoT * 0.04) * WORLD * 0.18;
-    step(dt * 1.5);
-    world.events.length = 0;
-    if (world.over) startDemo();
-  } else if (state === 'play') {
-    if (!ui.paused) step(dt * speed);
+    s.rig.yaw = -Math.PI * 0.75 + Math.sin(demoT * 0.05) * 0.6;
+    s.rig.tx = 96 + Math.sin(demoT * 0.03) * 34;
+    s.rig.tz = 96 + Math.cos(demoT * 0.04) * 34;
+    if (s.world.gameOver) { startDemo(); return; }
+  } else {
     input.update(dt);
-    ui.update(dt);
-    if (world.over) showEnd();
+    hud.update(dt);
+    const ended = s.viewer ? !!s.viewer.outcome : s.world.gameOver || (s.mode === 'replay' && s.world.frame >= (s.connection.replay.endFrame ?? Infinity));
+    if (ended && !s.over) setTimeout(() => { if (session === s && !s.over) showEnd(); }, 1500);
   }
-  rig.update(dt);
-  const ty = world.map.heightAt(rig.tx, rig.tz);
-  sun.position.set(rig.tx - 70, ty + 110, rig.tz - 40);
-  sun.target.position.set(rig.tx, ty, rig.tz);
-  world.render(elapsed, dt);
+  s.rig.update(dt);
+  const ty = s.world.map.heightAt(s.rig.tx, s.rig.tz);
+  sun.position.set(s.rig.tx - 70, ty + 110, s.rig.tz - 40);
+  sun.target.position.set(s.rig.tx, ty, s.rig.tz);
+  s.renderer.update(elapsed, dt, alpha);
   renderer.render(scene, camera);
 }
-function step(dt) {
-  const n = dt > 1 / 30 ? Math.ceil(dt / (1 / 30)) : 1;
-  for (let i = 0; i < n; i++) world.update(dt / n);
-}
 
-startDemo();
-requestAnimationFrame(frame);
+// ---------------------------------------------------------------- boot
+(async () => {
+  const keysHtml = KEYS.map(([a, b]) => `<div><dt>${a}</dt><dd><kbd>${b}</kbd></dd></div>`).join('');
+  $('keys-list').innerHTML = keysHtml;
+  $('keys-list-2').innerHTML = keysHtml;
+  try {
+    rules = await loadRules(async (f) => { const r = await fetch(f); if (!r.ok) throw new Error(`Could not load ${f} (${r.status})`); return r.text(); });
+  } catch (e) {
+    $('title-error').textContent = `Failed to load rules: ${e.message}`;
+    console.error(e);
+    return;
+  }
+  startDemo();
+  requestAnimationFrame(frame);
+})();
 
-// handy for debugging from the console
-window.glasswake = { get world() { return world; }, get input() { return input; }, get rig() { return rig; }, startGame, settings };
+// Console helpers
+window.glasswake = { get session() { return session; }, get world() { return session && session.world; }, get input() { return input; }, get rules() { return rules; }, startSinglePlayer, startReplay, settings };

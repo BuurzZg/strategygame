@@ -1,0 +1,51 @@
+# Abstract bases (names start with ^). Units and structures inherit from these.
+# Distances are world units: 1024 per cell, written as "<cells>c<units>", e.g. 3c768.
+# Times are simulation ticks (25 per second). Health is in hundredths (25000 = 250 hp).
+
+^Unit:
+	Tooltip:
+	Valued:
+	Buildable:
+		Queue: foundry
+	ConsumesSupply:
+		Amount: 1
+	Health:
+		Radius: 512
+	Armor:
+		Type: light
+	Selectable:
+		Radius: 900
+	Mobile:
+		Locomotor: hover
+		Strafe: true
+	RevealsShroud:
+		Range: 7c0
+	HiddenUnderFog:
+	LatticeRegen:
+	WithModel:
+
+^Armed:
+	AutoTarget:
+		ScanRange: 5c0
+	AttackFrontal:
+
+^Structure:
+	Tooltip:
+	Valued:
+	Buildable:
+		Queue: Structure
+	Health:
+	Armor:
+		Type: structure
+	Selectable:
+		Radius: 1600
+		Priority: 5
+	Building:
+	Weavable:
+	ProvidesPrerequisite:
+		RequiresCondition: !weaving
+	Recyclable:
+	RevealsShroud:
+		Range: 6c0
+	FrozenUnderFog:
+	WithModel:

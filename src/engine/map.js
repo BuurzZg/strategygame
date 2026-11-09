@@ -1,5 +1,9 @@
-import * as THREE from '../lib/three.module.js';
-import { MAP_N, CELL, WORLD, RES_COLOR, RES_GLOW } from './config.js';
+// Map data + seeded generator. Simulation-only (no three.js) and deterministic:
+// only arithmetic, floor/round and sqrt are used, so every client generates the same grid.
+// Heights (`h`) are visual only; the simulation is flat.
+import { CELL, fsin, fhypot } from './math.js';
+
+export const MAP_N = 96;
 
 // ---------- deterministic RNG + noise ----------
 export function mulberry32(seed) {
@@ -12,7 +16,7 @@ export function mulberry32(seed) {
   };
 }
 
-function makeNoise(seed) {
+export function makeNoise(seed) {
   const perm = new Uint16Array(512);
   const rnd = mulberry32(seed);
   const p = Array.from({ length: 256 }, (_, i) => i);
@@ -43,14 +47,14 @@ export class GameMap {
     this.seed = seed;
     this.rock = new Uint8Array(n * n);
     this.bld = new Int32Array(n * n);
-    this.res = new Float32Array(n * n);
-    this.resMax = new Float32Array(n * n);
+    this.res = new Int32Array(n * n);
+    this.resMax = new Int32Array(n * n);
     this.ventOf = new Int16Array(n * n).fill(-1);
     this.h = new Float32Array((n + 1) * (n + 1));
     this.vents = [];
     // base core centres, in continuous cell coordinates (point-symmetric about the map centre)
     this.bases = [{ x: 13.5, y: 13.5 }, { x: n - 13.5, y: n - 13.5 }];
-    this.resDirty = true;
+    this.resVersion = 0;
     this.generate();
   }
 
@@ -58,15 +62,15 @@ export class GameMap {
   inBounds(i, j) { return i >= 0 && j >= 0 && i < this.n && j < this.n; }
   passable(i, j) { if (!this.inBounds(i, j)) return false; const k = j * this.n + i; return !this.rock[k] && !this.bld[k]; }
   terrainPassable(i, j) { return this.inBounds(i, j) && !this.rock[j * this.n + i]; }
+  // world units (1024 per cell)
   cellOf(x) { return Math.max(0, Math.min(this.n - 1, Math.floor(x / CELL))); }
-  passableAt(x, z) {
-    const i = Math.floor(x / CELL), j = Math.floor(z / CELL);
-    return this.passable(i, j);
-  }
+  passableAt(x, y) { return this.passable(Math.floor(x / CELL), Math.floor(y / CELL)); }
+  terrainType(k) { return this.resMax[k] > 0 ? 'Crystal' : 'Sand'; }
 
+  // Render-space height lookup (render units: 2 per cell). Visual only.
   heightAt(x, z) {
     const n = this.n;
-    let gx = x / CELL, gz = z / CELL;
+    let gx = x / 2, gz = z / 2;
     gx = Math.max(0, Math.min(n - 0.001, gx)); gz = Math.max(0, Math.min(n - 0.001, gz));
     const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
     const w = n + 1;
@@ -88,7 +92,7 @@ export class GameMap {
     const ventPos = [];
     for (const [x, y] of half) { ventPos.push([x, y]); ventPos.push([n - x, n - y]); }
     ventPos.push([n / 2, n / 2]);
-    this.vents = ventPos.map(([x, y], id) => ({ id, x, y, cells: [] }));
+    this.vents = ventPos.map(([x, y], id) => ({ id, x, y, wx: Math.round(x * CELL), wy: Math.round(y * CELL), cells: [] }));
 
     // --- rock mask ---
     const ridgeAt = (x, y) => {
@@ -105,21 +109,21 @@ export class GameMap {
       const x = i + 0.5, y = j + 0.5;
       let rock = ridge[j * n + i] > thresh;
       if (i < 1 || j < 1 || i >= n - 1 || j >= n - 1) rock = true;
-      for (const b of this.bases) if (Math.hypot(x - b.x, y - b.y) < 13) rock = false;
-      for (const v of this.vents) if (Math.hypot(x - v.x, y - v.y) < 5) rock = false;
+      for (const b of this.bases) if (fhypot(x - b.x, y - b.y) < 13) rock = false;
+      for (const v of this.vents) if (fhypot(x - v.x, y - v.y) < 5) rock = false;
       this.rock[this.idx(i, j)] = rock ? 1 : 0;
     }
 
     // --- carve corridors so everything stays connected (done symmetrically) ---
     const carve = (x0, y0, x1, y1, w) => {
-      const len = Math.hypot(x1 - x0, y1 - y0);
+      const len = fhypot(x1 - x0, y1 - y0);
       if (len < 1) return;
       const steps = Math.ceil(len * 2);
       const wob = rnd() * 10;
       for (let s = 0; s <= steps; s++) {
         const t = s / steps;
         const nx = -(y1 - y0) / len, ny = (x1 - x0) / len;
-        const off = Math.sin(t * Math.PI * 2 + wob) * 3 * Math.sin(t * Math.PI);
+        const off = fsin(t * 6.283185307179586 + wob) * 3 * fsin(t * 3.141592653589793);
         const cx = x0 + (x1 - x0) * t + nx * off, cy = y0 + (y1 - y0) * t + ny * off;
         for (let dy = -w; dy <= w; dy++) for (let dx = -w; dx <= w; dx++) {
           if (dx * dx + dy * dy > w * w + 0.5) continue;
@@ -134,7 +138,7 @@ export class GameMap {
     carve(b0.x, b0.y, n / 2, n / 2, 2);
     for (const v of this.vents) {
       if (v.x + v.y > n) continue; // mirrored half handled by carve()
-      const tgt = Math.hypot(v.x - b0.x, v.y - b0.y) < 40 ? b0 : { x: n / 2, y: n / 2 };
+      const tgt = fhypot(v.x - b0.x, v.y - b0.y) < 40 ? b0 : { x: n / 2, y: n / 2 };
       carve(v.x, v.y, tgt.x, tgt.y, 1.5);
     }
     carve(b0.x + 8, b0.y + 30, n / 2, n / 2, 1.5);
@@ -158,7 +162,7 @@ export class GameMap {
     // --- vertex heights ---
     const w = n + 1;
     for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
-      const base = sym(fB, i, j, 0.035, 4) * 3.2 + Math.sin((i + j) * 0.35 + sym(fC, i, j, 0.05, 2) * 6) * 0.18;
+      const base = sym(fB, i, j, 0.035, 4) * 3.2 + fsin((i + j) * 0.35 + sym(fC, i, j, 0.05, 2) * 6) * 0.18;
       let rc = 0;
       for (const [a, b] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) {
         if (!this.inBounds(a, b) || this.rock[this.idx(a, b)]) rc++;
@@ -168,7 +172,7 @@ export class GameMap {
       else if (rc > 0) hgt += rc * 0.55;
       // flatten base pads
       for (const b of this.bases) {
-        const d = Math.hypot(i - b.x, j - b.y);
+        const d = fhypot(i - b.x, j - b.y);
         if (d < 10) hgt = hgt * (d / 10) + 1.2 * (1 - d / 10);
       }
       this.h[j * w + i] = hgt;
@@ -179,7 +183,7 @@ export class GameMap {
       const R = v.id === this.vents.length - 1 ? 4.2 : 3.6; // centre vent is richer
       for (let j = Math.floor(v.y - R); j <= Math.ceil(v.y + R); j++) for (let i = Math.floor(v.x - R); i <= Math.ceil(v.x + R); i++) {
         if (!this.terrainPassable(i, j)) continue;
-        const d = Math.hypot(i + 0.5 - v.x, j + 0.5 - v.y);
+        const d = fhypot(i + 0.5 - v.x, j + 0.5 - v.y);
         if (d > R || d < 0.9) continue;
         const k = this.idx(i, j);
         const amt = Math.round(140 + 220 * (1 - d / (R + 0.5)));
@@ -204,149 +208,4 @@ export class GameMap {
     return null;
   }
 
-  regrow(dt) {
-    for (const v of this.vents) for (const k of v.cells) {
-      if (this.res[k] < this.resMax[k]) { this.res[k] = Math.min(this.resMax[k], this.res[k] + dt * 0.12); this.resDirty = true; }
-    }
-  }
 }
-
-// ---------- rendering ----------
-export function buildTerrain(map) {
-  const n = map.n, w = n + 1;
-  const geo = new THREE.BufferGeometry();
-  const pos = new Float32Array(w * w * 3);
-  const col = new Float32Array(w * w * 3);
-  const fD = makeNoise(map.seed * 17 + 5);
-  const low = new THREE.Color(0x5d4f73), high = new THREE.Color(0xc4adb9), ridge = new THREE.Color(0x221b2e);
-  const vent = new THREE.Color(0x7a3a6c), salt = new THREE.Color(0xe6d6da);
-  const c = new THREE.Color();
-  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
-    const k = j * w + i;
-    const hgt = map.h[k];
-    pos[k * 3] = i * CELL; pos[k * 3 + 1] = hgt; pos[k * 3 + 2] = j * CELL;
-    let rc = 0;
-    for (const [a, b] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) if (!map.inBounds(a, b) || map.rock[map.idx(a, b)]) rc++;
-    const t = Math.max(0, Math.min(1, hgt / 3.4));
-    c.copy(low).lerp(high, t * 0.85);
-    const streak = fD(i * 0.25, j * 0.08, 3);
-    c.lerp(salt, Math.max(0, streak - 0.55) * 0.9);
-    if (rc > 0) c.lerp(ridge, rc / 4 * 0.9);
-    let ventInf = 0;
-    for (const v of map.vents) { const d = Math.hypot(i - v.x, j - v.y); if (d < 6) ventInf = Math.max(ventInf, 1 - d / 6); }
-    if (ventInf > 0 && rc < 2) c.lerp(vent, ventInf * 0.7);
-    col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
-  }
-  const idx = new Uint32Array(n * n * 6);
-  let p = 0;
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const a = j * w + i, b = a + 1, c2 = a + w, d = c2 + 1;
-    idx[p++] = a; idx[p++] = c2; idx[p++] = b;
-    idx[p++] = b; idx[p++] = c2; idx[p++] = d;
-  }
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.08 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
-// Obsidian glass shards on rock cells.
-export function buildRocks(map) {
-  const rnd = mulberry32(map.seed * 101 + 7);
-  const n = map.n;
-  const list = [];
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    if (!map.rock[map.idx(i, j)]) continue;
-    let edge = false;
-    for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (map.terrainPassable(i + a, j + b)) edge = true;
-    if (rnd() < (edge ? 0.75 : 0.22)) list.push([i, j, edge]);
-  }
-  const geo = new THREE.ConeGeometry(0.75, 1, 5, 1);
-  geo.translate(0, 0.5, 0);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x2a2236, roughness: 0.25, metalness: 0.6, flatShading: true, emissive: 0x1a0f2a, emissiveIntensity: 0.6 });
-  const mesh = new THREE.InstancedMesh(geo, mat, list.length * 2);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), v = new THREE.Vector3();
-  let k = 0;
-  for (const [i, j, edge] of list) {
-    const count = edge ? 2 : 1;
-    for (let c = 0; c < count; c++) {
-      const x = (i + 0.2 + rnd() * 0.6) * CELL, z = (j + 0.2 + rnd() * 0.6) * CELL;
-      const y = map.heightAt(x, z) - 0.3;
-      e.set((rnd() - 0.5) * 0.5, rnd() * 6.28, (rnd() - 0.5) * 0.5);
-      q.setFromEuler(e);
-      const hgt = (edge ? 2 : 3.5) + rnd() * 4;
-      s.set(0.7 + rnd() * 0.9, hgt, 0.7 + rnd() * 0.9);
-      v.set(x, y, z);
-      m.compose(v, q, s);
-      mesh.setMatrixAt(k++, m);
-    }
-  }
-  mesh.count = k;
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  return mesh;
-}
-
-// Resonance crystals: one instance per resource cell, scaled by remaining amount.
-export class CrystalField {
-  constructor(map, scene) {
-    this.map = map;
-    this.cells = [];
-    for (const v of map.vents) for (const k of v.cells) this.cells.push(k);
-    const geo = new THREE.OctahedronGeometry(0.55, 0);
-    geo.scale(1, 2.2, 1);
-    geo.translate(0, 0.9, 0);
-    this.mat = new THREE.MeshStandardMaterial({ color: RES_COLOR, emissive: RES_COLOR, emissiveIntensity: 0.55, roughness: 0.15, metalness: 0.3, flatShading: true });
-    this.per = 3;
-    this.mesh = new THREE.InstancedMesh(geo, this.mat, this.cells.length * this.per);
-    this.mesh.castShadow = true;
-    const rnd = mulberry32(map.seed * 55 + 3);
-    this.jit = this.cells.map(() => Array.from({ length: this.per }, () => [rnd() * 0.8 + 0.1, rnd() * 0.8 + 0.1, rnd() * 6.28, (rnd() - 0.5) * 0.7, (rnd() - 0.5) * 0.7, 0.6 + rnd() * 0.6]));
-    scene.add(this.mesh);
-
-    // vent mouths
-    const ringGeo = new THREE.TorusGeometry(1.4, 0.18, 6, 18);
-    ringGeo.rotateX(Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({ color: RES_GLOW, transparent: true, opacity: 0.8 });
-    this.rings = map.vents.map((v) => {
-      const r = new THREE.Mesh(ringGeo, ringMat);
-      const x = v.x * CELL, z = v.y * CELL;
-      r.position.set(x, map.heightAt(x, z) + 0.15, z);
-      scene.add(r);
-      return r;
-    });
-    this.update(true);
-  }
-  update(force = false) {
-    if (!force && !this.map.resDirty) return;
-    this.map.resDirty = false;
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), v = new THREE.Vector3();
-    const n = this.map.n;
-    let p = 0;
-    this.cells.forEach((k, ci) => {
-      const i = k % n, j = (k / n) | 0;
-      const frac = this.map.res[k] / this.map.resMax[k];
-      for (let c = 0; c < this.per; c++) {
-        const [ox, oz, ry, rx, rz, sc] = this.jit[ci][c];
-        const show = frac > c / this.per * 0.9;
-        const x = (i + ox) * CELL, z = (j + oz) * CELL;
-        v.set(x, this.map.heightAt(x, z) - 0.2, z);
-        e.set(rx, ry, rz); q.setFromEuler(e);
-        const f = show ? (0.35 + 0.65 * frac) * sc : 0.0001;
-        s.set(f, f, f);
-        m.compose(v, q, s);
-        this.mesh.setMatrixAt(p++, m);
-      }
-    });
-    this.mesh.instanceMatrix.needsUpdate = true;
-  }
-  animate(t) {
-    this.mat.emissiveIntensity = 0.45 + Math.sin(t * 2.1) * 0.15;
-    for (let i = 0; i < this.rings.length; i++) this.rings[i].scale.setScalar(1 + Math.sin(t * 1.7 + i) * 0.08);
-  }
-}
-
-export { WORLD };

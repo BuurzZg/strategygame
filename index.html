@@ -191,6 +191,36 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .slider { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .slider input { accent-color: var(--team); }
 .touch-note { display: none; color: var(--warn); font-size: 13px; }
+.error { margin: 0; min-height: 1.2em; color: var(--bad); font-size: 13px; }
+.error:empty { display: none; }
+.muted { color: var(--muted); font-size: 13px; }
+.note { margin: 0; padding: 10px 12px; border-left: 3px solid var(--warn); background: var(--panel); color: var(--text); font-size: 13px; max-width: 70ch; }
+code { font: 500 12px var(--f-mono); background: #241e33; padding: 1px 5px; }
+.file-btn { position: relative; display: inline-flex; align-items: center; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.file-btn:focus-within { outline: 2px solid var(--team); outline-offset: 2px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.form-grid label, .slider { display: flex; flex-direction: column; gap: 6px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.slider { flex-direction: row; align-items: center; text-transform: none; letter-spacing: 0; font-size: 13px; }
+.form-grid input, .code-field input, .slider input[type=number], .slots select, #replay-speed {
+  background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 8px 10px; font: 500 14px var(--f-body); letter-spacing: 0; text-transform: none;
+}
+.code-field input { width: 6.5ch; font: 600 18px var(--f-mono); letter-spacing: 0.2em; text-transform: uppercase; text-align: center; padding: 8px 6px; }
+.or { color: var(--muted); }
+.lobby-head { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; }
+.code-badge { display: flex; flex-direction: column; align-items: end; }
+.code-badge .lbl { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.code-badge strong { font: 600 34px var(--f-mono); letter-spacing: 0.22em; color: var(--res); }
+.slots { display: flex; flex-direction: column; gap: 6px; }
+.slot { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; }
+.slot-n { font: 600 14px var(--f-mono); color: var(--muted); }
+.slot strong { font: 700 15px var(--f-display); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot em { font: 500 10px var(--f-body); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-left: 6px; }
+.fac.accord { color: #3fd8c6; } .fac.combine { color: #f09a3a; }
+#net-status { position: absolute; top: 72px; right: max(16px, env(safe-area-inset-right, 0px)); background: var(--panel); border: 1px solid var(--warn); color: var(--warn); padding: 6px 12px; font-weight: 600; }
+.replay-only { display: none !important; }
+body.spectating .replay-only { display: flex !important; pointer-events: auto; }
+body.spectating #cmdpanel { display: none; }
 @media (pointer: coarse) { .touch-note { display: block; } }
 
 @media (max-width: 900px) {
@@ -226,9 +256,12 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       <div class="stat" id="st-res"><span class="lbl">Resonance</span><span class="val" id="res-val">0</span></div>
       <div class="stat" id="st-sup"><span class="lbl">Supply</span><span class="val" id="sup-val">0 / 0</span></div>
       <div class="stat"><span class="lbl">Elapsed</span><span class="val" id="time-val">00:00</span></div>
+      <label class="stat replay-only" for="replay-speed"><span class="lbl">Replay speed</span>
+        <select id="replay-speed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></label>
       <button id="btn-menu" type="button">Menu <kbd>Esc</kbd></button>
     </header>
     <div id="toasts" aria-live="polite"></div>
+    <div id="net-status" hidden>Waiting for other players…</div>
     <footer id="dock">
       <div id="mini-wrap"><canvas id="minimap" width="376" height="376" aria-label="Minimap"></canvas></div>
       <section id="selpanel" aria-label="Selection"></section>
@@ -266,12 +299,57 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
           <div class="seed"><input id="seed-input" type="number" min="1" max="99999" value="1207" aria-label="Map seed"><button type="button" class="chip" id="seed-roll">Roll</button></div>
         </div>
       </div>
-      <button type="button" class="primary" id="btn-start">Make landfall</button>
+      <div class="row">
+        <button type="button" class="primary" id="btn-start">Make landfall</button>
+        <button type="button" class="secondary" id="btn-mp">Multiplayer</button>
+        <label class="secondary file-btn" for="replay-file">Watch replay<input id="replay-file" type="file" accept=".json,application/json"></label>
+      </div>
+      <p class="error" id="title-error" role="alert"></p>
       <p class="touch-note">Glasswake plays best with a mouse and keyboard. On touch: tap to select, tap the ground to order, drag to pan, pinch to zoom.</p>
       <details>
         <summary>Controls</summary>
         <dl class="keys" id="keys-list"></dl>
       </details>
+    </div>
+  </div>
+
+  <div id="mp-screen" class="screen" hidden>
+    <div class="card panel-card">
+      <h2>Multiplayer</h2>
+      <p class="lede">Every player runs the same simulation; only orders travel over the network. Host a game and share its four-letter code, or join a friend's.</p>
+      <p class="note" id="mp-note" hidden>This page isn't being served by the Glasswake relay, so there's no server to host on. Run <code>npm install</code> then <code>npm start</code> in the project folder and open the address it prints, or point the relay address below at a machine that runs it.</p>
+      <div class="form-grid">
+        <label for="mp-name">Your name<input id="mp-name" type="text" maxlength="24" autocomplete="nickname"></label>
+        <label for="mp-url">Relay address<input id="mp-url" type="text" spellcheck="false"></label>
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="btn-host">Host a game</button>
+        <span class="or">or</span>
+        <label class="code-field" for="mp-code"><input id="mp-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Game code"></label>
+        <button type="button" class="secondary" id="btn-join">Join</button>
+      </div>
+      <p class="error" id="mp-error" role="alert"></p>
+      <div class="row"><button type="button" class="secondary" id="btn-mp-back">Back</button></div>
+    </div>
+  </div>
+
+  <div id="lobby-screen" class="screen" hidden>
+    <div class="card panel-card">
+      <div class="lobby-head">
+        <h2>Lobby</h2>
+        <div class="code-badge"><span class="lbl">Game code</span><strong id="lobby-code">----</strong></div>
+      </div>
+      <div id="lobby-slots" class="slots"></div>
+      <p class="muted" id="lobby-spect"></p>
+      <div class="row">
+        <label class="slider" for="lobby-seed">Map seed <input id="lobby-seed" type="number" min="1" max="99999"></label>
+      </div>
+      <p class="error" id="lobby-error" role="alert"></p>
+      <div class="row">
+        <button type="button" class="primary" id="btn-lobby-start">Start match</button>
+        <span class="muted" id="lobby-wait">Waiting for the host to start…</span>
+        <button type="button" class="secondary" id="btn-lobby-leave">Leave</button>
+      </div>
     </div>
   </div>
 
@@ -281,7 +359,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       <div class="row">
         <button type="button" class="primary" id="btn-resume">Resume</button>
         <button type="button" class="secondary" id="btn-restart">Restart map</button>
-        <button type="button" class="secondary" id="btn-quit">Quit to title</button>
+        <button type="button" class="secondary" id="btn-quit">Leave game</button>
       </div>
       <div class="row">
         <label class="slider" for="vol">Volume <input id="vol" type="range" min="0" max="100" value="50"></label>
@@ -301,6 +379,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       <table class="stats-table" id="end-stats"></table>
       <div class="row">
         <button type="button" class="primary" id="btn-again">New map</button>
+        <button type="button" class="secondary" id="btn-save-replay">Save replay</button>
         <button type="button" class="secondary" id="btn-title">Title</button>
       </div>
     </div>

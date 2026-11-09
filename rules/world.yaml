@@ -1,0 +1,38 @@
+# World actor: traits that exist once per match.
+
+World:
+	Faction@accord:
+		InternalName: accord
+		Name: Halcyon Accord
+		Color: 3fd8c6
+		Glow: 9ff9ee
+		Dark: 16454a
+		Description: Survey mandate from the northern shelf. Cold optics, patient doctrine.
+	Faction@combine:
+		InternalName: combine
+		Name: Ochre Combine
+		Color: f09a3a
+		Glow: ffd391
+		Dark: 5a3510
+		Description: Salvage guilds of the furnace basins. Loud engines, short contracts.
+	Locomotor@hover:
+		Name: hover
+		TerrainSpeeds:
+			Sand: 100
+			Crystal: 100
+	Locomotor@legs:
+		Name: legs
+		TerrainSpeeds:
+			Sand: 100
+			Crystal: 85
+	Locomotor@hull:
+		Name: hull
+		TerrainSpeeds:
+			Sand: 100
+			Crystal: 75
+	ResourceLayer:
+		RegrowInterval: 200
+		RegrowAmount: 1
+	StartingUnits:
+		BaseActor: core
+		Units: skimmer, skimmer, skimmer, needle, warden

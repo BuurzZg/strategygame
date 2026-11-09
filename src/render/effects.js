@@ -1,4 +1,4 @@
-import * as THREE from '../lib/three.module.js';
+import * as THREE from '../../lib/three.module.js';
 
 // Pooled particle system with per-particle colour, alpha and size.
 class Particles {

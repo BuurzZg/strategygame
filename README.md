@@ -2,95 +2,178 @@
 
 A real-time strategy game for the browser, built on three.js. You fight over a glass desert at dusk. Two survey consortia harvest resonance from singing vents, weave structures inside a lattice field, and try to break each other's bases.
 
-It is a clean-room project. There is no OpenRA code and no Command & Conquer data, art, audio, names or maps. Every model is built procedurally from primitives, every sound is synthesized with WebAudio, and every map is generated from a seed.
+The engine follows the same architectural ideas as classic data-driven RTS engines:
+
+- actors made of traits
+- YAML rules with inheritance and conditions
+- activity queues
+- orders executed in lockstep, so multiplayer and replays work by sending only player input
+
+All code is written from scratch in JavaScript. All game content (setting, factions, units, models, sounds, maps) is original to Glasswake.
 
 ## Run it
 
-It is plain ES modules with no build step. three.js r160 is vendored in `lib/`, so it runs offline. The only network fetch is Google Fonts, and it falls back to system fonts.
+### Single player (any static server)
 
 ```bash
-cd glasswake
 python -m http.server 8000
 ```
 
-Then open http://localhost:8000. Any static server works (`npx serve`, VS Code Live Server, nginx). Opening `index.html` straight from disk won't work, because browsers block ES modules on `file://`.
+Then open http://localhost:8000. Browsers block ES modules on `file://`, so you need a server of some kind.
 
-Debug helpers: add `?reveal` to the URL to turn off fog of war. `window.glasswake.world` exposes the live simulation in the console.
+### Multiplayer (relay server, Node 18+)
+
+```bash
+npm install
+npm start
+```
+
+Open http://localhost:8080 and choose **Multiplayer → Host a game**, then share the four-letter code. Friends on the same network open `http://<your-ip>:8080` and **Join** with the code. Each lobby slot can be a player or a bot (easy, normal or hard), and extra joiners spectate. To play over the internet, run the relay on a machine your friends can reach. Options: `PORT=9000 npm start`, or `LATENCY=8` for more order delay on slow connections.
+
+### Tests
+
+```bash
+npm test
+```
+
+```bash
+npm run check
+```
+
+- `npm test` runs two clients over a simulated laggy network with random orders, checks that every frame's sync hash matches, replays the recording, and plays a bot match.
+- `npm run check` lints the simulation code for anything that could differ between browsers.
+
+## Engine architecture
+
+```
+           UI / bots ──► Orders ──► OrderManager ──(lockstep, all clients)──► World.tick()
+                                        │                                       │
+                               NetClient / Local / Replay              actors · traits · activities
+                                                                                │ fx events
+                                                    WorldRenderer (three.js) ◄──┘ reads only
+```
+
+| Concept | Where | What it does |
+| --- | --- | --- |
+| Fixed tick | `engine/ordermanager.js` | The simulation advances in 40 ms ticks (25 per second). Rendering interpolates between ticks. |
+| Integer world | `engine/math.js` | 1024 world units per cell, 1024 angle units per turn, table-based sin/cos and atan. No floats leak into game state. |
+| Seeded RNG | `engine/random.js` | `world.rng` is the only randomness the simulation may use. |
+| World | `engine/world.js` | Actors in id order, trait index, spatial queries, fog checks, placement rules, crowd separation, sync hash. |
+| Actor and traits | `engine/actor.js`, `engine/traits.js` | An actor is an id, an owner, a position and a list of traits built from its rules. |
+| Rules | `engine/miniyaml.js`, `engine/rules.js`, `rules/*.yaml` | YAML with `Inherits`, `-Removal` and `Trait@instance`. Unknown traits or fields fail at load time. |
+| Conditions | `RequiresCondition: !weaving` | Turn traits on and off at runtime, for example while a structure is still being built, or for bot difficulty. |
+| Activities | `engine/activity.js`, `activities/` | Each actor has a queue of tasks with child activities and cancel. Examples: MoveTo, Attack, AttackMove, harvest loop. |
+| Orders | `engine/order.js` | Compact JSON input. The UI asks each selected actor's traits what they would do with a target (`orderFor`), and the chosen orders are resolved by the traits' `resolveOrder` on the scheduled frame. |
+| Lockstep | `engine/ordermanager.js` | Orders issued on frame F execute on frame F + latency on every client. Each packet carries a sync hash to detect desyncs. Disconnects become a deterministic surrender. |
+| Replays | same | A replay is the game settings plus the list of orders. Playback re-simulates the game. Save one from the end screen and load it with **Watch replay**. |
+| Weapons | `engine/weapons.js`, `rules/weapons.yaml` | A weapon is a projectile (InstantHit, Bolt, Shell) plus warheads (SpreadDamage with Versus percentages, CreateEffect). |
+| Players | `engine/player.js`, `traits/player.js` | A player actor with resources, supply, tech tree, weaver slots, shroud, statistics and victory conditions. |
+| Bots | `traits/bot.js` | Modules on the player actor (harvester, base builder, unit builder, squad manager), enabled by `bot-*` conditions. They run inside the simulation, so they cost no network traffic. |
+| Rendering | `render/` | Reads the world, interpolates, and turns simulation events (beams, explosions, deaths) into particles and sound. It never writes to the simulation. |
+| UI | `ui/` | Camera, selection, order generators (normal, placement, attack-move), HUD and minimap. |
+| Networking | `engine/netclient.js`, `server/relay.js` | The relay hosts lobbies and forwards packets. It never simulates anything. |
+
+### Trait hooks
+
+A trait opts into engine events just by defining the method:
+
+| Hook | When it runs |
+| --- | --- |
+| `created` | All traits on the actor exist. |
+| `addedToWorld` / `removedFromWorld` | The actor enters or leaves the world. |
+| `worldLoaded` | After players and the map are set up (world and player actors only). |
+| `tick` | Once per simulation tick while enabled. |
+| `idle` | The actor has no activity this tick. |
+| `damaged` / `killed` | The actor took damage or died. |
+| `actorDamaged` | One of the owner's actors took damage (player traits only). |
+| `resolveOrder` | An order addressed to this actor runs. |
+| `orderFor` | The UI asks what this trait would do with a target. |
+| `enable` / `disable` | `RequiresCondition` changed. |
+
+### Adding a unit
+
+Add it to `rules/units.yaml`. Any trait from `src/traits/` can be used, and you can inherit and override:
+
+```yaml
+lancer:
+	Inherits: ^Unit
+	Inherits@armed: ^Armed
+	Tooltip:
+		Name: Lancer
+		Description: Long-range glass spear thrower.
+	Valued:
+		Cost: 140
+	Buildable:
+		BuildDuration: 300
+		Prerequisites: uplink
+		Hotkey: L
+		BuildPaletteOrder: 45
+	Health:
+		HP: 18000
+	Mobile:
+		Speed: 95
+	Armament:
+		Weapon: Lens
+	WithModel:
+		Model: needle
+```
+
+The new unit appears in the Foundry's build menu automatically. To give it its own look, add a builder to `src/render/models.js` and an icon to `src/ui/hud.js`.
+
+### Determinism rules for simulation code
+
+These apply to everything in `engine/`, `traits/` and `activities/`:
+
+- **State is integers.** Use the helpers in `engine/math.js` (`isqrt`, `angleOf`, `sin`/`cos` tables). Avoid `Math.sin`, `Math.atan2`, `Math.hypot` and `**`.
+- **Randomness comes only from `world.rng`.** Never `Math.random`, and never the clock.
+- **Iterate in a stable order.** Actors are in id order; sort by id when gathering from maps or sets.
+- **Never let the UI or renderer change state directly.** Send an order.
+
+`npm run check` enforces most of this mechanically.
 
 ## How it plays
 
 | Concept | Glasswake |
 | --- | --- |
-| Resource | **Resonance** glass, grown around vents. Cells slowly regrow. |
-| Harvester | **Skimmer**, a hover sled. Drops off at a Core or Siphon. |
-| Building | **Weaving.** Pick a structure, place it, and it rises on site over time. Each Core supplies one weaver, so more Cores means more parallel construction. |
-| Placement rule | **Lattice field.** You can only build inside the radius of a Core (10 cells) or a Lattice Pylon (7 cells). You expand by chaining pylons toward new vents. |
+| Resource | **Resonance** glass grown around vents. Cells slowly regrow. |
+| Harvester | **Skimmer**. Drops off at a Core or Siphon. |
+| Building | **Weaving.** Place a structure and it rises on site. Each Core supplies one weaver. |
+| Placement | You can only build inside the **lattice field** of a Core or Pylon. Expand by chaining Pylons. |
 | Economy cap | **Supply** from Cores and Resonators, up to 120. |
-| Sustain | Units slowly self-repair inside their own lattice field. Menders heal in the field too. |
+| Stances | Engage (chase within a leash) or Hold (fire from position). |
 
-### Structures
+**Structures:**
 
-| Key | Name | Role |
+| Key | Structure | Role |
 | --- | --- | --- |
-| C | Core | HQ, drop-off, trains Skimmers, +12 supply, field 10 |
-| P | Lattice Pylon | Extends the field (radius 7) |
-| R | Resonator | +10 supply |
-| I | Siphon | Forward drop-off, arrives with a free Skimmer |
-| F | Foundry | Trains combat units |
-| T | Prism Spire | Defensive beam tower (needs Foundry) |
-| U | Uplink | Unlocks the Bastion (needs Foundry) |
+| C | Core | HQ |
+| P | Pylon | Extends the lattice field |
+| R | Resonator | Supply |
+| I | Siphon | Forward drop-off; arrives with a free Skimmer |
+| F | Foundry | Builds combat units |
+| T | Prism Spire | Defensive tower |
+| U | Uplink | Unlocks the Bastion |
 
-### Units
+**Units:**
 
-| Key | Name | Role | Weapon |
-| --- | --- | --- | --- |
-| K | Skimmer | Harvester | none |
-| N | Needle | Fast raider | shard (strong vs light) |
-| W | Warden | Line walker | beam (strong vs medium) |
-| M | Mender | Support | heals allies |
-| B | Bastion | Siege mortar | blast (strong vs heavy and structures), minimum range 3 |
+| Key | Unit | Role |
+| --- | --- | --- |
+| K | Skimmer | Harvester |
+| N | Needle | Raider |
+| W | Warden | Line walker |
+| M | Mender | Healer |
+| B | Bastion | Siege |
 
 ### Controls
 
-- **Selecting:** Left-drag to box select. Double-click selects all of that type on screen. Shift-click adds to or removes from the selection.
-- **Orders:** Right-click to move, attack, or harvest a crystal field. Right-click a Core or Siphon to send Skimmers home. With a Foundry selected, right-click sets its rally point.
-- **Order hotkeys:** `A` attack-move, `S` stop, `H` hold ground, `X` recycle a structure.
+- **Selecting:** Left-drag to select. Shift-click adds to or removes from the selection. Double-click selects every unit of that type on screen.
+- **Orders:** Right-click for the context order: move, attack, harvest, deliver or set a rally point. Shift + right-click queues orders.
+- **Order hotkeys:** `A` attack-move, `S` stop, `H` hold stance, `G` engage stance, `X` recycle.
 - **Groups:** `Ctrl+1–9` sets a control group, `1–9` recalls it, double-tap to jump the camera to it.
-- **Camera:** Arrow keys, screen edges or middle-drag to pan. `Q`/`E` or Alt+middle-drag to rotate. Mouse wheel to zoom. `Space` jumps to the last alert, or to your Core.
-- **Placement:** Shift-click keeps placing more of the same structure. `Esc` cancels placement or opens the menu.
-- **Production:** Right-click a train button to dequeue. Click a queue slot to cancel it.
-- **Touch:** Tap to select or order, drag to pan, pinch to zoom.
+- **Camera:** Arrows, screen edges or middle-drag to pan. `Q`/`E` to rotate. Mouse wheel to zoom. `Space` jumps to the last alert.
 
-## Code map
+### Debugging
 
-```
-index.html        page shell, HUD markup, all CSS
-lib/              three.js r160 (MIT, see lib/LICENSE)
-src/config.js     every number: units, structures, damage table, difficulty
-src/map.js        seeded symmetric map generator, terrain mesh, obsidian, crystals
-src/path.js       grid A* (binary heap, octile, no corner cutting) + string-pulling
-src/game.js       World: entities, orders, movement/separation, combat, harvesting,
-                  weaving, production, supply, fog, victory
-src/ai.js         bot: economy, supply, pylon-chain expansion, tech, waves, defence
-src/models.js     procedural low-poly models per unit/structure, team materials
-src/effects.js    pooled particles, beams, projectiles, shockwaves, order markers
-src/fog.js        per-team visibility grid + fog overlay shader
-src/input.js      camera rig, picking, selection, orders, placement ghost, touch
-src/ui.js         HUD, command card, tooltips, minimap (rotates with camera), overlays
-src/audio.js      synthesized WebAudio SFX
-src/main.js       renderer, lighting, title demo (AI vs AI), game loop, screens
-```
-
-Balance tuning lives entirely in `src/config.js`. The simulation is independent of rendering, so you can run fast headless matches from the console:
-
-```js
-const w = glasswake.world; for (let i = 0; i < 30 * 600; i++) w.update(1 / 30);
-```
-
-## Ideas for next steps
-
-- Give each faction its own unit roster and abilities. Right now they share one roster and differ only in color and lore.
-- Lockstep multiplayer. The simulation already runs on a fixed step and only needs a seeded RNG in place of `Math.random`.
-- Hand-authored maps and a map editor that reuses the generator's data format.
-- A flow-field pathfinder for large groups.
-- Replace procedural models with glTF assets loaded through `GLTFLoader`.
+- Add `?reveal` to the URL to show the whole map. This affects display only, so it is safe in multiplayer.
+- `glasswake.world` and `glasswake.session` expose the live game in the browser console.
+- `node tools/headless.js <seed> <minutes>` plays a bot match in the terminal.

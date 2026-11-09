@@ -1,0 +1,178 @@
+core:
+	Inherits: ^Structure
+	Tooltip:
+		Name: Core
+		Description: Command lattice. Weaves new structures, trains Skimmers and accepts resonance.
+	Valued:
+		Cost: 400
+	Buildable:
+		BuildDuration: 1125
+		Hotkey: C
+		BuildPaletteOrder: 10
+	Health:
+		HP: 200000
+	Building:
+		Footprint: 3
+	RevealsShroud:
+		Range: 10c0
+	ProvidesWeaver:
+		RequiresCondition: !weaving
+	ProvidesField:
+		Range: 10c0
+		RequiresCondition: !weaving
+	ProvidesSupply:
+		Amount: 12
+		RequiresCondition: !weaving
+	ResourceDropoff:
+		RequiresCondition: !weaving
+	ProductionQueue:
+		Type: core
+		RequiresCondition: !weaving
+	RallyPoint:
+	WithModel:
+		Model: core
+
+pylon:
+	Inherits: ^Structure
+	Tooltip:
+		Name: Lattice Pylon
+		Description: Extends the lattice field. Structures can only be woven inside the field.
+	Valued:
+		Cost: 60
+	Buildable:
+		BuildDuration: 250
+		Hotkey: P
+		BuildPaletteOrder: 20
+	Health:
+		HP: 32000
+	Building:
+		Footprint: 1
+	RevealsShroud:
+		Range: 7c0
+	ProvidesField:
+		Range: 7c0
+		RequiresCondition: !weaving
+	WithModel:
+		Model: pylon
+
+resonator:
+	Inherits: ^Structure
+	Tooltip:
+		Name: Resonator
+		Description: Tuning array. Raises the supply ceiling by 10.
+	Valued:
+		Cost: 100
+	Buildable:
+		BuildDuration: 400
+		Hotkey: R
+		BuildPaletteOrder: 30
+	Health:
+		HP: 52000
+	Building:
+		Footprint: 2
+	ProvidesSupply:
+		Amount: 10
+		RequiresCondition: !weaving
+	WithModel:
+		Model: resonator
+
+siphon:
+	Inherits: ^Structure
+	Tooltip:
+		Name: Siphon
+		Description: Forward drop-off for resonance. Arrives with one free Skimmer.
+	Valued:
+		Cost: 150
+	Buildable:
+		BuildDuration: 550
+		Hotkey: I
+		BuildPaletteOrder: 40
+	Health:
+		HP: 76000
+	Building:
+		Footprint: 2
+	RevealsShroud:
+		Range: 7c0
+	ResourceDropoff:
+		RequiresCondition: !weaving
+	FreeActor:
+		Actor: skimmer
+		RequiresCondition: !weaving
+	WithModel:
+		Model: siphon
+
+foundry:
+	Inherits: ^Structure
+	Tooltip:
+		Name: Foundry
+		Description: Glass-kiln assembly hall. Builds combat units.
+	Valued:
+		Cost: 200
+	Buildable:
+		BuildDuration: 700
+		Hotkey: F
+		BuildPaletteOrder: 50
+	Health:
+		HP: 115000
+	Building:
+		Footprint: 3
+	ProductionQueue:
+		Type: foundry
+		RequiresCondition: !weaving
+	RallyPoint:
+	WithModel:
+		Model: foundry
+
+spire:
+	Inherits: ^Structure
+	Tooltip:
+		Name: Prism Spire
+		Description: Defensive prism. Fires a focused beam at anything hostile in range.
+	Valued:
+		Cost: 125
+	Buildable:
+		BuildDuration: 500
+		Prerequisites: foundry
+		Hotkey: T
+		BuildPaletteOrder: 60
+	Health:
+		HP: 52000
+	Building:
+		Footprint: 1
+	RevealsShroud:
+		Range: 9c0
+	Turreted:
+		TurnSpeed: 26
+		IdleSpin: 6
+	AttackTurreted:
+		RequiresCondition: !weaving
+	AutoTarget:
+		InitialStance: Defend
+		RequiresCondition: !weaving
+	Armament:
+		Weapon: PrismBeam
+		MuzzleHeight: 440
+		RequiresCondition: !weaving
+	WithModel:
+		Model: spire
+
+uplink:
+	Inherits: ^Structure
+	Tooltip:
+		Name: Uplink
+		Description: Orbital relay. Unlocks the Bastion at the Foundry.
+	Valued:
+		Cost: 200
+	Buildable:
+		BuildDuration: 750
+		Prerequisites: foundry
+		Hotkey: U
+		BuildPaletteOrder: 70
+	Health:
+		HP: 72000
+	Building:
+		Footprint: 2
+	RevealsShroud:
+		Range: 8c0
+	WithModel:
+		Model: uplink

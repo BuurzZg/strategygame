@@ -1,5 +1,6 @@
-import * as THREE from '../lib/three.module.js';
-import { CELL, RES_COLOR } from './config.js';
+import * as THREE from '../../lib/three.module.js';
+import { RES_COLOR } from './terrain.js';
+const CELL = 2; // render units per cell
 
 // Procedural low-poly models. Forward is +X. Each builder returns
 // { root, body, turret?, spin?, bob?, cargo?, glow? } where root sits on the ground.
@@ -196,4 +197,4 @@ export function selectionRing(radius, own) {
   return m;
 }
 
-export function buildingRadius(def) { return def.size * CELL * 0.62; }
+export function buildingRadius(size) { return size * CELL * 0.62; }

@@ -1,0 +1,156 @@
+skimmer:
+	Inherits: ^Unit
+	Tooltip:
+		Name: Skimmer
+		Role: Harvester
+		Description: Hover sled that siphons resonance glass from vents and hauls it to a Core or Siphon.
+	Valued:
+		Cost: 50
+	Buildable:
+		Queue: core
+		BuildDuration: 200
+		Hotkey: K
+		BuildPaletteOrder: 10
+	Health:
+		HP: 15000
+		Radius: 480
+	Mobile:
+		Speed: 110
+		TurnSpeed: 45
+	RevealsShroud:
+		Range: 6c0
+	Harvester:
+		Capacity: 60
+		HarvestInterval: 2
+		HarvestAmount: 1
+		UnloadDelay: 15
+	WithModel:
+		Model: skimmer
+
+needle:
+	Inherits: ^Unit
+	Inherits@armed: ^Armed
+	Tooltip:
+		Name: Needle
+		Role: Raider
+		Description: Fast glass-dart skiff. Shreds Skimmers and light units, useless against armour.
+	Valued:
+		Cost: 60
+	Buildable:
+		BuildDuration: 175
+		Hotkey: N
+		BuildPaletteOrder: 20
+	Health:
+		HP: 9500
+		Radius: 384
+	Mobile:
+		Speed: 160
+		TurnSpeed: 48
+	RevealsShroud:
+		Range: 8c0
+	Armament:
+		Weapon: Shard
+		MuzzleHeight: 90
+	WithModel:
+		Model: needle
+
+warden:
+	Inherits: ^Unit
+	Inherits@armed: ^Armed
+	Tooltip:
+		Name: Warden
+		Role: Line walker
+		Description: Bipedal walker with a focusing lens. The backbone of any assault.
+	Valued:
+		Cost: 110
+	Buildable:
+		BuildDuration: 275
+		Hotkey: W
+		BuildPaletteOrder: 30
+	ConsumesSupply:
+		Amount: 2
+	Health:
+		HP: 25000
+		Radius: 540
+	Armor:
+		Type: medium
+	Mobile:
+		Speed: 88
+		TurnSpeed: 32
+		Locomotor: legs
+		Strafe: false
+	Turreted:
+		TurnSpeed: 36
+	-AttackFrontal:
+	AttackTurreted:
+	Armament:
+		Weapon: Lens
+		MuzzleHeight: 210
+	WithModel:
+		Model: warden
+
+mender:
+	Inherits: ^Unit
+	Tooltip:
+		Name: Mender
+		Role: Support
+		Description: Floating resonance tuner. Re-fuses damaged hulls of nearby allies.
+	Valued:
+		Cost: 90
+	Buildable:
+		BuildDuration: 225
+		Hotkey: M
+		BuildPaletteOrder: 40
+	Health:
+		HP: 11000
+		Radius: 440
+	Mobile:
+		Speed: 106
+		TurnSpeed: 45
+	HealsAllies:
+		Interval: 9
+		Amount: 400
+		Range: 2c768
+		SeekRange: 6c0
+	WithModel:
+		Model: mender
+
+bastion:
+	Inherits: ^Unit
+	Inherits@armed: ^Armed
+	Tooltip:
+		Name: Bastion
+		Role: Siege
+		Description: Slow hex-hull mortar. Lobs resonance charges that crack armour and structures.
+	Valued:
+		Cost: 230
+	Buildable:
+		BuildDuration: 450
+		Prerequisites: uplink
+		Hotkey: B
+		BuildPaletteOrder: 50
+	ConsumesSupply:
+		Amount: 4
+	Health:
+		HP: 58000
+		Radius: 740
+	Armor:
+		Type: heavy
+	Mobile:
+		Speed: 55
+		TurnSpeed: 17
+		Locomotor: hull
+		Strafe: false
+	RevealsShroud:
+		Range: 8c0
+	AutoTarget:
+		ScanRange: 7c0
+	Turreted:
+		TurnSpeed: 20
+	-AttackFrontal:
+	AttackTurreted:
+	Armament:
+		Weapon: Mortar
+		MuzzleHeight: 190
+	WithModel:
+		Model: bastion

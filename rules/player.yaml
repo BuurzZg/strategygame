@@ -1,0 +1,54 @@
+# Player actor: one per player. Bot modules switch on through conditions granted for bots.
+
+Player:
+	PlayerResources:
+		Cash: 500
+	SupplyManager:
+		Max: 120
+	TechTree:
+	WeaverManager:
+	PlaceBuilding:
+	Shroud:
+		Interval: 5
+	PlayerStatistics:
+	BaseAttackNotifier:
+		Interval: 300
+	ConquestVictoryConditions:
+	GrantBotConditions:
+	BotProfile@easy:
+		RequiresCondition: bot-easy
+		ThinkInterval: 40
+		HarvestBonus: 70
+		FirstWave: 8250
+		WaveBase: 16
+		WaveGrow: 6
+		MaxFoundries: 2
+	BotProfile@normal:
+		RequiresCondition: bot-normal
+		ThinkInterval: 25
+		HarvestBonus: 100
+		FirstWave: 6500
+		WaveBase: 20
+		WaveGrow: 8
+		MaxFoundries: 3
+	BotProfile@hard:
+		RequiresCondition: bot-hard
+		ThinkInterval: 15
+		HarvestBonus: 130
+		FirstWave: 5000
+		WaveBase: 18
+		WaveGrow: 10
+		MaxFoundries: 4
+	HarvesterBotModule:
+		RequiresCondition: bot
+	BaseBuilderBotModule:
+		RequiresCondition: bot
+	UnitBuilderBotModule:
+		RequiresCondition: bot
+		UnitShares:
+			needle: 22
+			warden: 48
+			mender: 10
+			bastion: 20
+	SquadManagerBotModule:
+		RequiresCondition: bot

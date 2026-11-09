@@ -1,0 +1,77 @@
+# Damage is in hundredths of a hit point. Versus is a percentage per armour type.
+
+Shard:
+	ReloadDelay: 10
+	Range: 3c0
+	Report: shard
+	Projectile: Bolt
+		Speed: 900
+	Warhead@damage: SpreadDamage
+		Damage: 700
+		Versus:
+			light: 130
+			medium: 80
+			heavy: 45
+			structure: 35
+	Warhead@effect: CreateEffect
+		Explosion: spark
+		Size: 60
+
+Lens:
+	ReloadDelay: 27
+	Range: 3c768
+	Report: beam
+	Projectile: InstantHit
+		Beam: true
+		Width: 14
+	Warhead@damage: SpreadDamage
+		Damage: 2100
+		Versus:
+			light: 85
+			medium: 125
+			heavy: 95
+			structure: 70
+	Warhead@effect: CreateEffect
+		Explosion: spark
+		Size: 80
+
+Mortar:
+	ReloadDelay: 80
+	Range: 6c512
+	MinRange: 1c512
+	Report: blast
+	Projectile: Shell
+		Speed: 410
+		Inaccuracy: 384
+		ArcHeight: 35
+	Warhead@damage: SpreadDamage
+		Damage: 5800
+		Spread: 1c307
+		Falloff: 40
+		Versus:
+			light: 55
+			medium: 90
+			heavy: 135
+			structure: 160
+	Warhead@effect: CreateEffect
+		Explosion: blast
+		Size: 80
+		ImpactSound: impact
+
+PrismBeam:
+	ReloadDelay: 25
+	Range: 4c768
+	Report: beam
+	Projectile: InstantHit
+		Beam: true
+		Width: 22
+	Warhead@damage: SpreadDamage
+		Damage: 2600
+		Versus:
+			light: 85
+			medium: 125
+			heavy: 95
+			structure: 70
+	Warhead@effect: CreateEffect
+		Explosion: spark
+		Size: 100
