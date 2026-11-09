@@ -16,7 +16,7 @@ export function worldLoaded(m) {
   });
 
   s.foundriesLost = 0;
-  m.onEachKilled([m.actor('cfound1'), m.actor('cfound2')], () => {
+  m.onEachKilled([m.actor('cfound1')], () => {
     s.foundriesLost++;
     if (s.foundriesLost === 1) m.say('quill', 'You think one kiln matters? I have a hundred crews and a hole to the centre of this world.');
   });

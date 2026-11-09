@@ -12,9 +12,23 @@ class BotModule extends Trait {
   order(name, subjects, target, extra) { this.world.resolveOrder(makeOrder(name, subjects, target, extra), this.p); }
   mine(pred) { const out = []; for (const a of this.world.actors) if (a.owner === this.p && !a.dead && pred(a)) out.push(a); return out; }
   queues(type) { return this.world.enabledTraits('ProductionQueue', this.p).filter((q) => q.info.Type === type); }
+  // A base to rally around: the Core, any structure, or (squad-only missions) the army itself.
   home() {
     const core = this.mine((a) => a.type === 'core' && !a.conditions.has('weaving'))[0];
-    return core || this.mine((a) => !!a.building)[0] || null;
+    if (core) return core;
+    const b = this.mine((a) => !!a.building)[0];
+    if (b) return b;
+    const units = this.mine((a) => !!a.mobile);
+    if (!units.length) return null;
+    let x = 0, y = 0;
+    for (const u of units) { x += u.x; y += u.y; }
+    return { x: Math.trunc(x / units.length), y: Math.trunc(y / units.length), virtual: true };
+  }
+  // Structures this player may weave right now (respects per-mission rule overrides).
+  canWeave(type) {
+    const info = this.world.rules.actors.get(type);
+    const b = info && info.traitInfo('Buildable');
+    return !!b && b.Queue.includes('Structure') && !this.p.tech.missing(b.Prerequisites);
   }
   rallyPoint(home) {
     const c = (this.world.map.n * CELL) >> 1;
@@ -47,7 +61,7 @@ defineTrait('UnitBuilderBotModule', class extends BotModule {
       if (q && !q.canQueue('skimmer')) this.order('StartProduction', [q.self], null, 'skimmer');
     }
     for (const q of this.queues('foundry')) {
-      if (q.queue.length >= (p.resources.cash > 800 ? 4 : 2)) continue;
+      if (q.queue.length >= (p.resources.cash > 1500 ? 5 : p.resources.cash > 800 ? 4 : 2)) continue;
       const type = this.pick(q);
       if (!type) continue;
       const cost = w.rules.actor(type).traitInfo('Valued').Cost;
@@ -55,7 +69,8 @@ defineTrait('UnitBuilderBotModule', class extends BotModule {
     }
   }
   pick(q) {
-    const shares = Object.entries(this.info.UnitShares).filter(([t]) => !this.p.tech.missing(this.world.rules.actor(t).traitInfo('Buildable').Prerequisites));
+    const avail = new Set(q.buildables().filter((i) => !this.p.tech.missing(i.traitInfo('Buildable').Prerequisites)).map((i) => i.name));
+    const shares = Object.entries(this.info.UnitShares).filter(([t]) => avail.has(t));
     const total = shares.reduce((s, [, v]) => s + v, 0);
     if (!total) return null;
     let r = this.world.rng.int(total);
@@ -71,18 +86,21 @@ defineTrait('BaseBuilderBotModule', class extends BotModule {
     if (!this.due(5)) return;
     const w = this.world, p = this.p, pr = this.profile, f = w.frame;
     const home = this.home();
-    if (!home || p.weavers.list.length >= 2) return;
+    if (!home || home.virtual || !w.fieldSources(p).length || p.weavers.list.length >= 2) return;
     const count = (t) => this.mine((a) => a.type === t).length;
+    const can = (t) => this.canWeave(t);
     const foundries = count('foundry');
     const room = p.supply.cap() - p.supply.used();
-    const pendingSupply = p.weavers.list.some((a) => a.has('ProvidesSupply'));
-    if (room < 6 + foundries * 2 && !pendingSupply && p.supply.cap() < p.supply.info.Max) this.build('resonator', home);
-    else if (foundries === 0) this.build('foundry', home);
-    else if (count('spire') < 1 && f > 3750) this.build('spire', home, true);
-    else if (count('uplink') === 0 && f > 5500) this.build('uplink', home);
-    else if (foundries < pr.MaxFoundries && f > 6000 && p.resources.cash > 350) this.build('foundry', home);
-    else if (f > 4250 && count('siphon') < 2) this.expand(home);
-    else if (count('spire') < 3 && f > 9000 && p.resources.cash > 400) this.build('spire', home, true);
+    const pendingSupply = p.weavers.list.filter((a) => a.has('ProvidesSupply')).length;
+    const t0 = this.startFrame ?? (this.startFrame = f); // missions and autopilot start mid-game
+    const age = f - t0;
+    if (can('resonator') && p.supply.cap() < p.supply.info.Max && ((room < 6 + foundries * 2 && !pendingSupply) || (room < 4 && pendingSupply < 2))) this.build('resonator', home);
+    else if (can('foundry') && foundries === 0) this.build('foundry', home);
+    else if (can('spire') && count('spire') < 1 && age > 3750) this.build('spire', home, true);
+    else if (can('uplink') && count('uplink') === 0 && age > 5500) this.build('uplink', home);
+    else if (can('foundry') && foundries < pr.MaxFoundries && (age > 6000 || p.resources.cash > 1200) && p.resources.cash > 350) this.build('foundry', home);
+    else if (can('siphon') && can('pylon') && age > pr.ExpandAfter && count('siphon') < 2) this.expand(home);
+    else if (can('spire') && count('spire') < 3 && age > 9000 && p.resources.cash > 400) this.build('spire', home, true);
   }
 
   cost(type) { return this.world.rules.actor(type).traitInfo('Valued').Cost; }
@@ -168,13 +186,48 @@ defineTrait('SquadManagerBotModule', class extends BotModule {
     const idle = army.filter((a) => a.isIdle);
 
     const threatened = this.mine((a) => a.building && f - a.health.lastDamaged < 100)[0] || this.mine((a) => a.harvester && f - a.health.lastDamaged < 75)[0];
-    if (threatened && !this.attacking) {
-      const free = army.filter((a) => a.isIdle || (a.activity && a.activity.constructor.label === 'Moving'));
-      if (free.length) this.order('AttackMove', free, { x: threatened.x, y: threatened.y });
+    if (threatened) {
+      // A real attack on the base (several hostiles near it) recalls the whole army.
+      const near = w.actorsInCircle(threatened.x, threatened.y, 10 * CELL).filter((a) => a.mobile && a.attack && p.isEnemy(a.owner)).length;
+      if (near >= 3 && this.attacking && !this.currentGoal(army)) { this.attacking = false; this.target = null; this.order('AttackMove', army, { x: threatened.x, y: threatened.y }); return; }
+      if (!this.attacking) {
+        const free = army.filter((a) => a.isIdle || (a.activity && a.activity.constructor.label === 'Moving'));
+        if (free.length) this.order('AttackMove', free, { x: threatened.x, y: threatened.y });
+      }
     }
 
+    // Mission scripts can steer the army with goals (actors to destroy, points to reach or hold).
+    const goal = this.currentGoal(army);
+    if (goal) {
+      // Squads with Menders pause to heal when badly hurt and nothing is shooting at them.
+      if (this.restUntilHealed(army)) return;
+      const fresh = this.target !== goal || this.justRested;
+      this.justRested = false;
+      this.target = goal; this.attacking = true;
+      const send = fresh ? army : idle;
+      if (send.length) {
+        const t = goal.actor ? { actor: goal.actor } : { x: goal.x, y: goal.y };
+        const fighters = send.filter((a) => !!a.attack), helpers = send.filter((a) => !a.attack);
+        // Attack-move even toward a target actor, so the army fights through its defenders.
+        if (fighters.length) this.order('AttackMove', fighters, { x: t.actor ? t.actor.x : t.x, y: t.actor ? t.actor.y : t.y });
+        if (helpers.length) this.order('Move', helpers, { x: t.actor ? t.actor.x : t.x, y: t.actor ? t.actor.y : t.y });
+      }
+      return;
+    }
+    if (this.target && this.target.goal) { this.target = null; this.attacking = false; }
     const threshold = pr.WaveBase + this.wave * pr.WaveGrow;
-    if (!this.attacking && f > pr.FirstWave && armySupply >= Math.min(threshold, p.supply.cap() - 12)) {
+    // AttackRatio (percent): only attack when our army outweighs everything the enemy fields.
+    // RetreatRatio: pull back when an attack turns against us. 0 disables either check.
+    const enemyArmy = pr.AttackRatio || pr.RetreatRatio ? this.enemyStrength() : 0;
+    const maxed = p.supply.cap() >= p.supply.info.Max - 10 && armySupply >= p.supply.cap() - 30;
+    const strongEnough = !pr.AttackRatio || armySupply * 100 >= enemyArmy * pr.AttackRatio || (maxed && armySupply * 100 >= enemyArmy * 85);
+    if (this.attacking && pr.RetreatRatio && !maxed && armySupply * 100 < enemyArmy * pr.RetreatRatio) {
+      this.attacking = false; this.target = null;
+      const r = this.rallyPoint(home);
+      if (army.length) this.order('Move', army, r);
+      return;
+    }
+    if (!this.attacking && f > pr.FirstWave && strongEnough && armySupply >= Math.min(threshold, p.supply.cap() - 12)) {
       this.attacking = true; this.wave++;
       this.launch(army);
     } else if (this.attacking) {
@@ -184,7 +237,15 @@ defineTrait('SquadManagerBotModule', class extends BotModule {
         if (army.length) this.order('Move', army, r);
       } else {
         if (!this.target || this.target.dead) this.launch(army);
-        else if (idle.length) this.order('AttackMove', idle, { x: this.target.x, y: this.target.y });
+        else if (idle.length) {
+          // Reinforcements gather at the rally point and join the attack as a group, not one by one.
+          const far = idle.filter((a) => distSq(a.x, a.y, this.target.x, this.target.y) > 400 * CELL * CELL);
+          const farSupply = far.reduce((s, a) => s + (a.trait('ConsumesSupply')?.info.Amount || 0), 0);
+          const near = idle.filter((a) => !far.includes(a));
+          if (near.length) this.order('AttackMove', near, { x: this.target.x, y: this.target.y });
+          if (far.length && farSupply >= 8) this.order('AttackMove', far, { x: this.target.x, y: this.target.y });
+          else if (far.length) { const r = this.rallyPoint(home); const loose = far.filter((a) => distSq(a.x, a.y, r.x, r.y) > 49 * CELL * CELL); if (loose.length) this.order('Move', loose, r); }
+        }
       }
     } else {
       const r = this.rallyPoint(home);
@@ -193,6 +254,47 @@ defineTrait('SquadManagerBotModule', class extends BotModule {
       for (const q of this.queues('foundry')) { const rp = q.self.trait('RallyPoint'); if (rp) rp.point = { x: r.x, y: r.y }; }
     }
   }
+  restUntilHealed(army) {
+    if (!army.some((a) => a.has('HealsAllies'))) return false;
+    let hp = 0, max = 0, x = 0, y = 0;
+    for (const a of army) { hp += a.health.hp; max += a.health.maxHp; x += a.x; y += a.y; }
+    const frac = (hp * 100) / max;
+    const cx = Math.trunc(x / army.length), cy = Math.trunc(y / army.length);
+    const underFire = this.world.actorsInCircle(cx, cy, 9 * CELL).some((a) => a.attack && this.p.isEnemy(a.owner));
+    if (!this.resting && frac < 55 && !underFire) {
+      this.resting = true;
+      this.order('Move', army, { x: cx, y: cy });
+      return true;
+    }
+    if (this.resting) {
+      if (frac >= 85 || underFire) { this.resting = false; this.justRested = true; return false; }
+      return true;
+    }
+    return false;
+  }
+
+  enemyStrength() {
+    let s = 0;
+    for (const a of this.world.actors) if (a.mobile && a.attack && !a.dead && this.p.isEnemy(a.owner)) s += a.trait('ConsumesSupply')?.info.Amount || 0;
+    return s;
+  }
+
+  currentGoal(army) {
+    const goals = this.p.botGoals;
+    if (!goals || !goals.length) return null;
+    while (goals.length) {
+      const g = goals[0];
+      if (g.actor) { if (!g.actor.dead && !g.actor.disposed) return g; goals.shift(); continue; }
+      if (!g.hold && army.length) {
+        let x = 0, y = 0;
+        for (const a of army) { x += a.x; y += a.y; }
+        if (distSq(Math.trunc(x / army.length), Math.trunc(y / army.length), g.x, g.y) < 16 * CELL * CELL) { goals.shift(); continue; }
+      }
+      return g;
+    }
+    return null;
+  }
+
   launch(army) {
     const enemy = this.world.actors.filter((a) => a.building && !a.dead && this.p.isEnemy(a.owner));
     if (!enemy.length || !army.length) return;

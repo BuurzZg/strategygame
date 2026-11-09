@@ -10,6 +10,7 @@ export function worldLoaded(m) {
   m.after(m.seconds(7), () => m.say('lind', 'Beacon is north-east of the landing site. Wardens up front, Needles on the flanks.'));
   m.after(m.seconds(12), () => m.hint('Drag to select your units, then right-click the ground to move.'));
   s.beacon = m.objective('Secure the survey beacon');
+  m.botGoals(m.you, [{ cell: BEACON, hold: true }]); // used when the player is on autopilot
 
   // Secured once we have a unit by the beacon and no Combine units nearby.
   m.when(
@@ -22,6 +23,7 @@ export function worldLoaded(m) {
 function beaconSecured(m) {
   const s = m.state;
   m.complete(s.beacon);
+  m.botGoals(m.you, []);
   m.say('lind', 'Beacon is scorched but intact. Those were Combine salvage skiffs, Director.');
   m.after(m.seconds(5), () => {
     m.say('vashti', 'Then we are not alone out here. Your Core is coming down at the landing site. Put the Skimmers to work.');

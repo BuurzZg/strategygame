@@ -90,7 +90,11 @@ export class Input {
     this.on(c, 'pointermove', () => { this.mouseIn = true; });
     this.on(c, 'pointerleave', () => { this.mouseIn = false; });
     this.on(document, 'mouseleave', () => { this.mouseIn = false; });
-    this.on(c, 'wheel', (e) => { e.preventDefault(); this.rig.zoom(e.deltaY > 0 ? 1.12 : 1 / 1.12); }, { passive: false });
+    this.on(c, 'wheel', (e) => {
+      e.preventDefault();
+      if (e.shiftKey) this.rig.pitch = Math.max(0.3, Math.min(1.3, this.rig.pitch + (e.deltaY > 0 ? 0.04 : -0.04)));
+      else this.rig.zoom(e.deltaY > 0 ? 1.12 : 1 / 1.12);
+    }, { passive: false });
     this.on(window, 'keydown', (e) => this.keyDown(e));
     this.on(window, 'keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     this.on(window, 'blur', () => { this.keys.clear(); this.mouseIn = false; });
@@ -318,6 +322,7 @@ export class Input {
     if (e.pointerType === 'touch') return this.touchDown(e);
     if (e.button === 1) { e.preventDefault(); this.drag = { kind: 'pan', x: e.clientX, y: e.clientY, alt: e.altKey }; return; }
     if (e.button === 0) {
+      if (this.ui.debug && this.ui.debug.spawnMode) { this.ui.debug.handleClick(this.targetAt(e.clientX, e.clientY)); return; }
       if (this.mode === 'place') { this.tryPlace(e.shiftKey); return; }
       if (this.mode === 'amove') {
         const t = this.targetAt(e.clientX, e.clientY);
@@ -389,10 +394,22 @@ export class Input {
 
   // ---------------------------------------------------------- keyboard
   keyDown(e) {
-    if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    const tag = e.target && e.target.tagName;
+    const typing = tag === 'TEXTAREA' || tag === 'SELECT' || (tag === 'INPUT' && !['checkbox', 'radio', 'range', 'button'].includes(e.target.type));
+    if (typing) return;
     const k = e.key.toLowerCase();
     this.keys.add(k);
-    if (k === 'escape') { if (this.mode !== 'normal') this.cancelMode(); else this.ui.togglePause(); return; }
+    // Developer / capture keys work in every mode.
+    if (k === '`' || k === 'f9') { e.preventDefault(); this.ui.debug && this.ui.debug.toggle(); return; }
+    if (k === 'f8') { e.preventDefault(); this.s.app.setClean(!document.body.classList.contains('clean')); return; }
+    if (k === 'f7') { e.preventDefault(); this.s.app.setCinematic(!this.s.director); return; }
+    if (k === 'f6') { e.preventDefault(); this.s.app.toggleRecording(true); return; }
+    if (k === 'escape') {
+      if (this.ui.debug && this.ui.debug.spawnMode) { this.ui.debug.spawnMode = null; return; }
+      if (document.body.classList.contains('clean')) { this.s.app.setClean(false); return; }
+      if (this.mode !== 'normal') this.cancelMode(); else this.ui.togglePause();
+      return;
+    }
     if (this.s.over || this.ui.paused) return;
     if (/^[0-9]$/.test(k)) {
       const n = +k;

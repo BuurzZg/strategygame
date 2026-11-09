@@ -11,6 +11,8 @@ export function worldLoaded(m) {
   m.after(m.seconds(13), () => m.hint('Press H to make units hold their ground, G to let them chase again. Shift + right-click queues waypoints.'));
   s.obj = m.objective('Destroy the drill relays (0/3)');
   s.crewObj = m.objective('Find the missing survey crew', { primary: false });
+  // Autopilot route: first relay, the lost crew, then the far relays.
+  m.botGoals(m.you, [m.actor('relay_a'), [42, 22], m.actor('relay_c'), m.actor('relay_b')]);
 
   // Extra guards on harder settings.
   if (m.difficulty !== 'easy') m.spawn('warden', 'combine', [27, 28]);

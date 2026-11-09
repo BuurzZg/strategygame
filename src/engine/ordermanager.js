@@ -25,6 +25,7 @@ export class OrderManager {
     this.remoteHashes = new Map();
     this.desync = null;
     this.onDesync = null;
+    this.onOrders = null; // debug hook: (frame, client, orders)
     this.stalled = false;
     this.replay = record ? { version: 2, settings: world.settings, frames: [] } : null;
     this.playerForClient = new Map(world.players.filter((p) => p.clientIndex >= 0).map((p) => [p.clientIndex, p]));
@@ -93,7 +94,8 @@ export class OrderManager {
       const player = this.playerForClient.get(c);
       if (orders && orders.length) {
         if (this.replay) this.replay.frames.push([f, c, orders]);
-        if (player) for (const o of orders) w.resolveOrder(o, player);
+        if (this.onOrders) this.onOrders(f, c, orders);
+        for (const o of orders) if (player || o.w) w.resolveOrder(o, player || null);
       }
       if (this.gone.has(c) && f === this.gone.get(c) + 1 && player && !player.outcome) {
         const surrender = { n: 'Surrender', s: [] };
@@ -120,6 +122,7 @@ export class ReplayConnection {
   constructor(replay) { this.replay = replay; this.onPacket = null; this.onLeft = null; }
   attach(om) {
     om.latency = 0;
+    om.local = -2; // a replay viewer never sends orders, even when observers could in the original game
     om.ready = (frame) => frame <= (this.replay.endFrame ?? Infinity);
     const byFrame = new Map();
     for (const [f, c, o] of this.replay.frames) { if (!byFrame.has(f)) byFrame.set(f, new Map()); byFrame.get(f).set(c, o); }

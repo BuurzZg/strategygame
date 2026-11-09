@@ -265,6 +265,7 @@ export class Hud {
     const w = this.world, v = this.viewer;
     const secs = w.frame / 25;
     $('time-val').textContent = fmtTime(secs);
+    $('autopilot-badge').hidden = !(v && v.autopilot);
     if (v) {
       $('res-val').textContent = v.resources.cash;
       const used = v.supply.used(), cap = v.supply.cap();
@@ -446,7 +447,7 @@ export class Hud {
     ctx.setTransform(X.c * sc, X.s * sc, -X.s * sc, X.c * sc, tx, ty);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.miniBase, 0, 0);
-    const vis = rd.reveal ? rd.allVisible : this.viewer.shroud.vis;
+    const vis = rd.reveal || !rd.viewer ? rd.allVisible : rd.viewer.shroud.vis;
     ctx.fillStyle = hex(RES_COLOR);
     for (const v of w.map.vents) for (const k of v.cells) if (w.map.res[k] > 20 && vis[k]) ctx.fillRect(k % n, (k / n) | 0, 1, 1);
     const d = this.fogImg.data;
@@ -482,6 +483,8 @@ export class Hud {
     const ctx = this.octx, w = this.world, inp = this.input, rd = this.renderer;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+    if (document.body.classList.contains('clean')) return;
+    if (this.debug && this.debug.open) this.debug.drawOverlay(ctx);
     for (const v of rd.views.values()) {
       const a = v.actor;
       if (a.dead || !v.model.root.visible) continue;

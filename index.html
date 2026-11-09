@@ -223,6 +223,34 @@ body.spectating .replay-only { display: flex !important; pointer-events: auto; }
 body.spectating #cmdpanel { display: none; }
 @media (pointer: coarse) { .touch-note { display: block; } }
 
+/* ---------- debug + capture ---------- */
+.badge { font: 600 11px var(--f-mono); letter-spacing: 0.14em; padding: 4px 8px; border: 1px solid var(--team); color: var(--team); }
+.badge.rec { border-color: var(--bad); color: var(--bad); animation: rec-blink 1.2s steps(2) infinite; }
+@keyframes rec-blink { 50% { opacity: 0.35; } }
+body.clean #hud, body.clean #overlay, body.clean #debug-panel { display: none !important; }
+#debug-panel { position: absolute; z-index: 25; top: 64px; right: max(12px, env(safe-area-inset-right, 0px)); width: min(360px, calc(100vw - 24px)); max-height: calc(100% - 80px); overflow-y: auto;
+  background: rgba(13, 11, 20, 0.94); border: 1px solid var(--line); font: 12px var(--f-body); color: var(--text); }
+#debug-panel header { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--panel-solid); border-bottom: 1px solid var(--line); }
+#debug-panel header strong { font: 700 13px var(--f-display); }
+#debug-panel header button { margin-left: auto; background: none; border: 0; font-size: 18px; cursor: pointer; color: var(--muted); }
+.dbg-hint, .dbg-muted { color: var(--muted); font: 11px var(--f-mono); }
+#debug-panel section { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }
+#debug-panel h4 { margin: 0 0 6px; font: 600 10px var(--f-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+#debug-panel pre { margin: 0; font: 11px/1.45 var(--f-mono); white-space: pre-wrap; word-break: break-word; }
+#dbg-log { max-height: 220px; overflow-y: auto; color: var(--muted); }
+.dbg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+.dbg-grid label, .dbg-row { display: flex; align-items: center; gap: 6px; }
+.dbg-row { flex-wrap: wrap; margin-top: 6px; }
+#debug-panel button:not(header button) { background: var(--panel); border: 1px solid var(--line); padding: 4px 8px; cursor: pointer; font-size: 12px; }
+#debug-panel button:not(header button):hover { border-color: var(--team); }
+#debug-panel button.rec { border-color: var(--bad); color: var(--bad); }
+#debug-panel select, #debug-panel input[type=number] { background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 3px 5px; font-size: 12px; max-width: 150px; }
+#debug-panel input[type=number] { width: 52px; }
+.spec-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.spec-sides fieldset { border: 1px solid var(--line); padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; margin: 0; }
+.spec-sides legend { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); padding: 0 4px; }
+.spec-sides select { background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 7px 9px; }
+
 /* ---------- campaign ---------- */
 .skirmish { display: flex; flex-direction: column; gap: 14px; border-top: 1px solid var(--line-soft); padding-top: 16px; }
 .section-h { margin: 0; font: 700 13px var(--f-body); letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
@@ -305,6 +333,8 @@ body.spectating #cmdpanel { display: none; }
       <div class="stat" id="st-res"><span class="lbl">Resonance</span><span class="val" id="res-val">0</span></div>
       <div class="stat" id="st-sup"><span class="lbl">Supply</span><span class="val" id="sup-val">0 / 0</span></div>
       <div class="stat"><span class="lbl">Elapsed</span><span class="val" id="time-val">00:00</span></div>
+      <span class="badge" id="autopilot-badge" hidden>Autopilot</span>
+      <span class="badge rec" id="rec-badge" hidden>● REC</span>
       <div class="stat" id="mission-timer" hidden><span class="lbl">Time left</span><span class="val" id="timer-val">00:00</span></div>
       <button id="btn-objectives" type="button" hidden>Objectives <kbd>O</kbd></button>
       <label class="stat replay-only" for="replay-speed"><span class="lbl">Replay speed</span>
@@ -334,6 +364,7 @@ body.spectating #cmdpanel { display: none; }
       <div class="row">
         <button type="button" class="primary" id="btn-campaign">Campaign</button>
         <button type="button" class="secondary" id="btn-mp">Multiplayer</button>
+        <button type="button" class="secondary" id="btn-spectate">Watch AI</button>
         <label class="secondary file-btn" for="replay-file">Watch replay<input id="replay-file" type="file" accept=".json,application/json"></label>
       </div>
       <section class="skirmish" aria-labelledby="skirmish-h">
@@ -406,6 +437,33 @@ body.spectating #cmdpanel { display: none; }
     </div>
   </div>
 
+  <div id="spectate-screen" class="screen" hidden>
+    <div class="card panel-card">
+      <div class="eyebrow">Spectate</div>
+      <h2>AI versus AI</h2>
+      <p class="lede">Two bots play a full match while you watch. Turn on the cinematic camera and hide the HUD for clean footage. Press F6 to record, F8 for the HUD, F7 for the camera, and the backquote key for developer tools.</p>
+      <div class="spec-sides">
+        <fieldset><legend>Side one</legend>
+          <select id="spec-a-faction" aria-label="Side one consortium"><option value="accord" selected>Halcyon Accord</option><option value="combine">Ochre Combine</option></select>
+          <select id="spec-a-bot" aria-label="Side one difficulty"><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard" selected>Hard</option></select>
+        </fieldset>
+        <fieldset><legend>Side two</legend>
+          <select id="spec-b-faction" aria-label="Side two consortium"><option value="accord">Halcyon Accord</option><option value="combine" selected>Ochre Combine</option></select>
+          <select id="spec-b-bot" aria-label="Side two difficulty"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
+        </fieldset>
+      </div>
+      <div class="row">
+        <label class="slider" for="spec-seed">Map seed <input id="spec-seed" type="number" min="1" max="99999" placeholder="random"></label>
+        <label class="slider" for="spec-cine"><input id="spec-cine" type="checkbox" checked> Cinematic camera</label>
+        <label class="slider" for="spec-clean"><input id="spec-clean" type="checkbox"> Hide HUD</label>
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="btn-spectate-start">Start match</button>
+        <button type="button" class="secondary" id="btn-spectate-back">Back</button>
+      </div>
+    </div>
+  </div>
+
   <div id="mp-screen" class="screen" hidden>
     <div class="card panel-card">
       <h2>Multiplayer</h2>
@@ -457,6 +515,8 @@ body.spectating #cmdpanel { display: none; }
       <div class="row">
         <label class="slider" for="vol">Volume <input id="vol" type="range" min="0" max="100" value="50"></label>
         <label class="slider" for="edge"><input id="edge" type="checkbox" checked> Edge scrolling</label>
+        <label class="slider" for="autopilot"><input id="autopilot" type="checkbox"> Autopilot (the AI plays your side)</label>
+        <button type="button" class="secondary" id="btn-debug">Developer tools</button>
         <label class="slider" for="speed">Game speed
           <select id="speed"><option value="0.75">Slow</option><option value="1" selected>Normal</option><option value="1.5">Fast</option></select>
         </label>

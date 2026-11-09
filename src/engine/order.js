@@ -5,6 +5,8 @@
 // Wire format (compact JSON):  { n: name, s: [actorIds], t: target, x: extra, q: 1 if queued }
 //   target: { a: actorId } | { x, y } (world units) | undefined
 //   orders with no subjects are player-level (PlaceBuilding, Surrender) and go to the player actor.
+//   { w: 1 } marks a world order (developer commands, autopilot); it goes to the World actor and
+//   may come from an observer with no player.
 
 export function makeOrder(name, subjects, target, extra, queued) {
   const o = { n: name, s: subjects.map((a) => (typeof a === 'number' ? a : a.id)) };
@@ -16,7 +18,14 @@ export function makeOrder(name, subjects, target, extra, queued) {
 
 const GROUP_MOVES = new Set(['Move', 'AttackMove']);
 
+export function makeWorldOrder(name, extra) { return { n: name, s: [], w: 1, x: extra }; }
+
 export function resolveOrder(world, player, o) {
+  if (o.w) {
+    const order = { name: o.n, target: null, extra: o.x, queued: false, player: player || null };
+    for (const t of world.worldActor.traits) if (t.enabled && t.resolveOrder) t.resolveOrder(order);
+    return;
+  }
   if (!player || player.outcome === 'lost') return;
   let target = null;
   if (o.t) {

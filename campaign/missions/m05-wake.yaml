@@ -136,10 +136,6 @@ Mission:
 		Type: foundry
 		Owner: combine
 		Cell: 71,15
-	Actor@cfound2:
-		Type: foundry
-		Owner: combine
-		Cell: 79,21
 	Actor@cres1:
 		Type: resonator
 		Owner: combine
@@ -208,3 +204,19 @@ Mission:
 		Type: needle
 		Owner: combine
 		Cell: 68,22
+
+Rules:
+	# Quill fights a defensive war around the drill; the Uplink drops do most of the raiding.
+	Player:
+		BotProfile@easy:
+			FirstWave: 12000
+			MaxFoundries: 1
+			HarvestBonus: 70
+		BotProfile@normal:
+			FirstWave: 10000
+			WaveBase: 26
+			MaxFoundries: 1
+			HarvestBonus: 85
+		BotProfile@hard:
+			FirstWave: 8000
+			MaxFoundries: 3

@@ -38,15 +38,23 @@ Mission:
 		Name: Ochre Combine
 		Faction: combine
 		Bot: campaign
-		Cash: 600
+		Cash: 200
 	Actor@core:
 		Type: core
 		Owner: accord
 		Cell: 13,81
+	Actor@siphon:
+		Type: siphon
+		Owner: accord
+		Cell: 27,77
 	Actor@s1:
 		Type: skimmer
 		Owner: accord
 		Cell: 18,78
+	Actor@s4:
+		Type: skimmer
+		Owner: accord
+		Cell: 22,72
 	Actor@s2:
 		Type: skimmer
 		Owner: accord
@@ -99,10 +107,6 @@ Mission:
 		Type: foundry
 		Owner: combine
 		Cell: 75,15
-	Actor@cfound2:
-		Type: foundry
-		Owner: combine
-		Cell: 84,18
 	Actor@cspire1:
 		Type: spire
 		Owner: combine
@@ -143,3 +147,17 @@ Mission:
 		Type: needle
 		Owner: combine
 		Cell: 68,18
+
+Rules:
+	# The Combine here is dug in, not raiding: it builds up longer before its first attack.
+	Player:
+		BotProfile@easy:
+			FirstWave: 11000
+			MaxFoundries: 2
+		BotProfile@normal:
+			FirstWave: 9500
+			WaveBase: 24
+			MaxFoundries: 2
+		BotProfile@hard:
+			FirstWave: 7500
+			MaxFoundries: 3

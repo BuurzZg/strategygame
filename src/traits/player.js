@@ -54,7 +54,7 @@ defineTrait('WeaverManager', class extends Trait {
   tick() {
     this.list = this.list.filter((a) => !a.dead && !a.disposed && !a.trait('Weavable').done);
     const cores = this.world.enabledTraits('ProvidesWeaver', this.self.owner).length;
-    const slots = Math.max(1, cores), rate = cores ? 2 : 1;
+    const slots = Math.max(1, cores), rate = (cores ? 2 : 1) * (this.world.dev && this.world.dev.isFast(this.self.owner) ? 12 : 1);
     for (let i = 0; i < this.list.length; i++) {
       const wv = this.list[i].trait('Weavable');
       wv.waiting = i >= slots;
@@ -181,19 +181,30 @@ defineTrait('GrantConditionOnSetting', class extends Trait {
 }, { Setting: '', Condition: '' });
 
 // ---------------------------------------------------------------- bots
+// Bots get `bot` + `bot-<type>`. setAutopilot hands a human player to a bot profile mid-game.
 defineTrait('GrantBotConditions', class extends Trait {
   created() {
+    this.tokens = [];
     const p = this.self.owner;
-    if (!p.botType) return;
-    this.self.grantCondition('bot');
-    this.self.grantCondition(`bot-${p.botType}`);
+    p.autopilot = null;
+    if (p.botType) this.grant(p.botType);
+  }
+  grant(type) { this.tokens.push(this.self.grantCondition('bot'), this.self.grantCondition(`bot-${type}`)); }
+  setAutopilot(type) {
+    const p = this.self.owner;
+    if (p.botType) return; // real bots keep their profile
+    for (const t of this.tokens) this.self.revokeCondition(t);
+    this.tokens = [];
+    p.autopilot = type || null;
+    if (type) this.grant(type);
   }
 }, {});
 
 // Difficulty profile, enabled by a `bot-<type>` condition.
 defineTrait('BotProfile', class extends Trait {
   enable() { this.self.owner.botProfile = this.info; this.self.owner.harvestBonus = this.info.HarvestBonus; }
-}, { ThinkInterval: 25, HarvestBonus: 100, FirstWave: 6500, WaveBase: 20, WaveGrow: 8, MaxFoundries: 3, SkimmersPerDropoff: 4, MaxSkimmers: 16 });
+  disable() { if (this.self.owner.botProfile === this.info) { this.self.owner.botProfile = null; this.self.owner.harvestBonus = 100; } }
+}, { ThinkInterval: 25, HarvestBonus: 100, FirstWave: 6500, WaveBase: 20, WaveGrow: 8, MaxFoundries: 3, SkimmersPerDropoff: 4, MaxSkimmers: 16, AttackRatio: 0, RetreatRatio: 0, ExpandAfter: 4250 });
 
 // ---------------------------------------------------------------- world: starting units
 defineTrait('StartingUnits', class extends Trait {

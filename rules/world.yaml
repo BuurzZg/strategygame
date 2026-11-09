@@ -45,6 +45,11 @@ World:
 		Condition: mission
 	MissionScript:
 		RequiresCondition: mission
+	GrantConditionOnSetting@dev:
+		Setting: dev
+		Condition: devmode
+	DeveloperMode:
+		RequiresCondition: devmode
 	StartingUnits:
 		RequiresCondition: !mission
 		BaseActor: core

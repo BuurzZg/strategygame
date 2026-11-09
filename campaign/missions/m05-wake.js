@@ -11,6 +11,8 @@ export function worldLoaded(m) {
   m.reveal(DRILL, 4, m.seconds(10));
   s.drill = m.objective('Destroy the Deep Drill before it breaches', { deadline: limit, expire: 'fail' });
   s.uplink = m.objective('Destroy the Combine Uplink to stop reinforcement drops', { primary: false });
+  // Autopilot: build up, then go straight for the drill.
+  m.when(() => (m.armySupply(m.you) >= m.pick(26, 32, 36) && m.armySupply(m.you) >= m.armySupply('combine')) || m.frame > limit - m.minutes(6), () => m.botGoals(m.you, [m.actor('drill')]));
 
   // Reinforcement drops while Quill's Uplink stands.
   m.every(m.minutes(m.pick(2.5, 2, 1.6)), () => {

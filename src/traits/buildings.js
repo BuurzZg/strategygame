@@ -129,7 +129,8 @@ defineTrait('ProductionQueue', class ProductionQueue extends Trait {
     if (!this.queue.length) return;
     const info = this.current();
     const dur = info.traitInfo('Buildable').BuildDuration;
-    if (++this.progress < dur) return;
+    this.progress += this.world.dev && this.world.dev.isFast(this.self.owner) ? 12 : 1;
+    if (this.progress < dur) return;
     const exit = this.exitPoint();
     if (!exit) { this.progress = dur; return; }
     const type = this.queue.shift();

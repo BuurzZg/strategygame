@@ -8,7 +8,9 @@
     "start": "node server/relay.js",
     "test": "node tools/simtest.js && node tools/missiontest.js",
     "missions": "node tools/missiontest.js",
-    "check": "node tools/check-determinism.js"
+    "check": "node tools/check-determinism.js",
+    "selfplay": "node tools/selfplay.js",
+    "capture": "node tools/capture.js"
   },
   "dependencies": {
     "ws": "^8.18.0"

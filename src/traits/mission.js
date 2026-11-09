@@ -57,6 +57,17 @@ class MissionAPI {
     const p = typeof owner === 'string' ? this.player(owner) : owner;
     for (const a of [].concat(actors)) if (this.alive(a)) this.world.changeOwner(a, p);
   }
+  // Steer a bot (or the player's autopilot) toward objectives, in order. Each goal is an actor
+  // to destroy or a cell [x, y] to reach; { cell, hold: true } keeps the army there.
+  botGoals(owner, goals) {
+    const p = typeof owner === 'string' ? this.player(owner) : owner;
+    p.botGoals = goals.filter(Boolean).map((g) => (g.info && g.id !== undefined ? { actor: g, goal: true } : { ...this.pos(g.cell || g), hold: !!g.hold, goal: true }));
+  }
+  armySupply(owner) {
+    let s = 0;
+    for (const a of this.actors(owner)) if (a.mobile && !a.harvester) s += a.trait('ConsumesSupply')?.info.Amount || 0;
+    return s;
+  }
   give(owner, cash) { (typeof owner === 'string' ? this.player(owner) : owner).resources.give(cash); }
 
   // ---- orders (issued as the actors' owner)
@@ -195,6 +206,8 @@ defineTrait('MissionObjectives', class MissionObjectives extends Trait {
     // Missions add objectives in stages, so victory is declared by the script (m.win()).
     // Failing any primary objective, or losing everything, ends the mission automatically.
     if (this.list.some((o) => o.primary && o.state === 'failed')) { this.finish('lost'); return; }
-    if (w.frame > 25 && w.frame % 25 === 0 && !w.actors.some((a) => a.owner === me && !a.dead && a.health)) this.finish('lost');
+    // Losing everything ends the mission, unless every primary objective is already done.
+    const pending = this.list.some((o) => o.primary && o.state === 'active');
+    if (pending && w.frame > 25 && w.frame % 25 === 0 && !w.actors.some((a) => a.owner === me && !a.dead && a.health)) this.finish('lost');
   }
 }, {});

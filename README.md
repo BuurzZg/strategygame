@@ -41,12 +41,135 @@ npm run missions
 ```
 
 ```bash
+npm run selfplay
+```
+
+```bash
 npm run check
 ```
 
 - `npm test` runs two clients over a simulated laggy network with random orders, checks that every frame's sync hash matches, replays the recording, and plays a bot match. It then runs the mission checks.
 - `npm run missions` runs only the campaign mission checks.
+- `npm run selfplay` lets the AI play skirmishes and the whole campaign headless and reports the results.
 - `npm run check` lints the simulation code for anything that could differ between browsers.
+
+## Debug tools
+
+Press `` ` `` or F9 in any game, or choose **Menu → Developer tools**, to open the developer panel.
+
+| Section | What it does |
+| --- | --- |
+| Performance | FPS, ticks per second, simulation time per tick, draw calls, triangles, actor/projectile/particle counts, the sync hash, and each player's resources, supply and bot state. Network stalls and desyncs appear here too. |
+| View | Overlays for movement paths and waypoints, weapon / scan / heal / sight ranges, unit labels (id, type, activity, stance), passability (obsidian, structures, crystal) and lattice fields. **Reveal map** removes fog, and **View as** shows any player's fog. These are display-only, so they are safe in multiplayer. |
+| Time | Speeds from 0.25× to 8×, pause, and single-step one tick. |
+| Cheats | +5000 resonance, fast build (12×), autopilot, instant win or loss, spawn any actor at a click, and kill / damage / heal / give away the selection. |
+| Camera & capture | Cinematic camera, hide HUD, letterbox, and video recording. |
+| Inspector | The selected actor's position, facing, health, conditions, activity chain, queue, stance and every trait (disabled traits are marked `-`). |
+| Event log | Orders as they execute (frame, client, order) plus deaths, dialogue and objective changes. |
+
+Cheats are sent as **world orders** through the normal order pipeline. They stay deterministic, they are recorded in replays, and a replay with cheats plays back exactly. They are only available when the game's `dev` setting is on, which it is for skirmish, campaign and spectator games, but not multiplayer.
+
+Keys that work everywhere:
+
+| Key | Action |
+| --- | --- |
+| F9 or `` ` `` | Debug panel |
+| F8 | Hide HUD |
+| F7 | Cinematic camera |
+| F6 | Start/stop recording |
+| Shift + wheel | Tilt the camera |
+
+## The AI plays the game
+
+- **Watch AI** (title screen) runs a full match between two bots, each set to easy, normal or hard, with the cinematic camera.
+- **Autopilot** hands your side to the AI mid-game. Use **Menu → Autopilot**, the debug panel, or `?autopilot`. It works in skirmish and in every campaign mission: mission scripts give the bot their objectives with `m.botGoals()`.
+- `npm run selfplay` plays a skirmish matrix (several seeds × matchups) and the whole campaign on autopilot headless, then reports winners, game lengths and stalemates. Add `campaign hard` or `skirmish` to run one part.
+
+Current self-play results:
+
+- **Skirmish:** every game ends with a winner. Hard beats normal 5–0, normal vs normal splits 3–2, hard beats easy 5–0.
+- **Campaign on autopilot:** the AI wins all five missions on easy and normal. On hard it wins three of the five.
+
+How the bots are built:
+
+- Bots are modules on the player actor.
+- Difficulty profiles in `rules/player.yaml` control think rate, harvest bonus, attack timing and wave sizes, Foundry count and expansion timing.
+- Two settings make a bot attack only when it has the advantage: `AttackRatio` and `RetreatRatio`. The hard bot and the autopilot use them.
+- Missions can retune enemy profiles in their `Rules:` section.
+
+## Recording trailers and gameplay
+
+**In the browser:**
+
+1. Press F6, or use **Record video** in the debug panel.
+2. Recording captures only the 3D view (never the HUD), plus game audio.
+3. Press F6 again to save a `.webm` file.
+
+Combine this with F8 (clean view), F7 (cinematic camera), letterbox and the speed controls.
+
+**Scripted**, through URL options:
+
+```
+?spectate&seed=77&a=accord:hard&b=combine:normal
+?mission=m05-wake&difficulty=normal&autopilot
+?skirmish&autopilot&seed=1207
+?replayurl=clips/match.gwreplay.json
+```
+
+Any of these can be extended with:
+
+| Option | Effect |
+| --- | --- |
+| `&cinematic` | Cinematic camera |
+| `&clean` | Hide the HUD |
+| `&letterbox` | 2.39:1 letterbox |
+| `&reveal` | Show the whole map |
+| `&speed=2` | Game speed |
+| `&debug` | Open the debug panel |
+| `&mute` | No audio |
+| `&record=90` | Record for 90 seconds, then download |
+
+**Fully automated**, with a real browser through Playwright:
+
+```bash
+npm start
+```
+
+In a second terminal:
+
+```bash
+npm install --no-save playwright && npx playwright install chromium
+```
+
+```bash
+node tools/capture.js --seconds 90 --seed 77 --out clips/ai-match.webm --headed
+```
+
+```bash
+node tools/capture.js --mission m05-wake --autopilot --reveal --seconds 120 --out clips/wake.webm --headed
+```
+
+```bash
+node tools/capture.js --replay clips/match.gwreplay.json --speed 2 --out clips/replay.webm --headed
+```
+
+Use `--headed` on a machine with a GPU for smooth 60 fps. Headless capture works, but it renders in software.
+
+A good trailer workflow:
+
+1. Run `npm run selfplay` or watch AI matches until you find a good game.
+2. Save its replay from the end screen.
+3. Record the replay several times with different camera settings. Replays re-simulate exactly, so every take shows the same battle.
+
+MediaRecorder files have no duration header. To fix that, or to get an MP4:
+
+```bash
+ffmpeg -i clip.webm -c copy fixed.webm
+```
+
+```bash
+ffmpeg -i clip.webm -c:v libx264 -crf 18 -c:a aac clip.mp4
+```
 
 ## Engine architecture
 

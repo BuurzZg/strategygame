@@ -10,6 +10,10 @@ import { WorldRenderer, R } from './render/worldrenderer.js';
 import { CameraRig, Input } from './ui/input.js';
 import { Hud } from './ui/hud.js';
 import { Audio } from './ui/audio.js';
+import { DebugTools } from './ui/debug.js';
+import { Recorder } from './ui/recorder.js';
+import { Director } from './render/director.js';
+import { makeWorldOrder } from './engine/order.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -36,6 +40,50 @@ let input = null;
 let sun = null;
 let acc = 0;
 let net = null;
+let letterbox = false;
+const recorder = new Recorder(canvas, audio);
+
+// Shared controls used by the debug panel, hotkeys and URL options.
+const app = {
+  session: () => session,
+  input: () => input,
+  hud,
+  recorder,
+  renderer,
+  setCinematic(on) {
+    if (!session) return;
+    session.director = on ? new Director(session) : null;
+    if ($('dbg-cine')) $('dbg-cine').checked = !!on;
+    if (on && input) input.cancelMode();
+  },
+  setClean(on) {
+    document.body.classList.toggle('clean', !!on);
+    if (session) session.renderer.hideRings = !!on;
+    if ($('dbg-clean')) $('dbg-clean').checked = !!on;
+  },
+  setLetterbox(on) { letterbox = !!on; if ($('dbg-letterbox')) $('dbg-letterbox').checked = letterbox; },
+  setSpeed(v) { if (session && session.mode !== 'multiplayer') session.speed = v; },
+  togglePause() { if (session && session.mode !== 'multiplayer') session.devPaused = !session.devPaused; },
+  step() { if (session && session.devPaused) { session.om.tryTick(); } },
+  async toggleRecording(withAudio = true) {
+    if (!Recorder.supported()) { hud.toast('Video recording is not supported in this browser', 'bad'); return; }
+    if (recorder.recording) {
+      const blob = await recorder.stop();
+      if (blob) Recorder.download(blob, `glasswake-${session ? session.mode : 'clip'}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.webm`);
+      hud.toast('Recording saved', 'good');
+      $('rec-badge').hidden = true;
+    } else if (recorder.start({ withAudio })) {
+      hud.toast('Recording. Press F6 again to stop and save.', 'info');
+      $('rec-badge').hidden = false;
+    }
+  },
+  setAutopilot(on) {
+    if (!session || !session.viewer || !session.world.dev) return;
+    session.om.issue(makeWorldOrder('Dev', { cmd: 'autopilot', player: session.viewer.index, bot: on ? 'autopilot' : null }));
+  },
+};
+const debug = new DebugTools(app);
+hud.debug = debug;
 const settings = { faction: 'accord', difficulty: 'normal', seed: 1207, name: '', campaignDifficulty: 'normal' };
 try { settings.name = localStorage.getItem('gw-name') || ''; settings.campaignDifficulty = localStorage.getItem('gw-campaign-diff') || 'normal'; } catch {}
 
@@ -89,7 +137,7 @@ function resize() {
 window.addEventListener('resize', resize);
 
 function show(screen) {
-  for (const id of ['title-screen', 'campaign-screen', 'briefing-screen', 'mp-screen', 'lobby-screen', 'pause-screen', 'end-screen']) $(id).hidden = id !== screen;
+  for (const id of ['title-screen', 'campaign-screen', 'briefing-screen', 'spectate-screen', 'mp-screen', 'lobby-screen', 'pause-screen', 'end-screen']) $(id).hidden = id !== screen;
   $('hud').hidden = screen !== null;
 }
 
@@ -109,14 +157,16 @@ function startSession({ gameSettings, localClient, connection, mode, missionDef 
   const world = new World(missionRules || rules, map, gameSettings, { mission: missionDef });
   const viewer = mode === 'demo' || mode === 'replay' ? null : world.players.find((p) => p.clientIndex === localClient) || null;
   const clients = gameSettings.players.filter((p) => p.client !== undefined && p.client >= 0).map((p) => p.client);
+  if (gameSettings.observerOrders && !clients.includes(-1)) clients.push(-1);
   const om = new OrderManager(world, connection, { localClient, clients, latency: gameSettings.latency ?? 1, record: mode !== 'demo' && mode !== 'replay' });
   if (connection instanceof ReplayConnection) connection.attach(om);
   if (connection.flushBacklog) connection.flushBacklog();
   om.onDesync = (d) => console.warn('Desync', d);
   const rig = new CameraRig(camera, world.map);
-  const s = { world, om, viewer, rig, mode, over: false, speed: 1, connection, mission: missionDef, speakers: campaign ? campaign.speakers : new Map() };
+  const s = { world, om, viewer, rig, mode, over: false, speed: 1, connection, mission: missionDef, speakers: campaign ? campaign.speakers : new Map(), app, director: null, devPaused: false };
+  om.onOrders = (f, c, o) => debug.onOrders(f, c, o);
   const rd = new WorldRenderer(scene, world, viewer, {
-    reveal: mode === 'demo' || params.has('reveal'),
+    reveal: mode === 'demo' || mode === 'spectate' || params.has('reveal'),
     sfx: (name, x, y, flat) => {
       if (mode === 'demo') return;
       const d = Math.hypot(x * R - rig.tx, y * R - rig.tz);
@@ -142,8 +192,11 @@ function startSession({ gameSettings, localClient, connection, mode, missionDef 
   const anchor = core || mine[0];
   if (anchor && anchor.x > half && anchor.y < half) rig.yaw = Math.PI * 0.25;
   if (mode === 'demo') { rig.jump(80, 80); rig.distT = rig.dist = 95; }
+  if (mode === 'spectate' && !viewer) { const c = world.actors.find((a) => a.type === 'core'); if (c) rig.jumpWorld(c.x + 6144, c.y + 6144); }
   resize();
   rd.consumeEvents(world.fxEvents.splice(0));
+  if (debug.open) debug.attach();
+  app.setClean(false);
   return s;
 }
 
@@ -169,7 +222,7 @@ function startSinglePlayer() {
   const other = settings.faction === 'accord' ? 'combine' : 'accord';
   startSession({
     gameSettings: {
-      seed: settings.seed, latency: 1, mode: 'skirmish',
+      seed: settings.seed, latency: 1, mode: 'skirmish', dev: true,
       players: [{ name: settings.name || 'You', faction: settings.faction, client: 0 }, { name: `Bot (${settings.difficulty})`, faction: other, bot: settings.difficulty }],
     },
     localClient: 0, connection: new LocalConnection(), mode: 'skirmish',
@@ -177,6 +230,18 @@ function startSinglePlayer() {
   show(null);
   hud.toast('Landfall. Your Core is weaving the lattice.', 'info');
   hud.toast('Tip: weave a Foundry (F), then a Resonator (R) before supply caps.', 'info');
+}
+
+// AI vs AI, for watching, testing and recording footage. Observers may send world orders
+// (cheats, autopilot), and the whole match is recorded as a replay.
+function startSpectate({ seed, a = 'accord:hard', b = 'combine:normal' } = {}) {
+  audio.init();
+  const slot = (spec, i) => { const [faction, bot] = spec.split(':'); return { name: `${faction === 'accord' ? 'Accord' : 'Combine'} (${bot})`, faction, bot }; };
+  startSession({
+    gameSettings: { seed: seed || 1 + Math.floor(Math.random() * 99998), latency: 1, mode: 'spectate', dev: true, observerOrders: true, players: [slot(a, 0), slot(b, 1)] },
+    localClient: -1, connection: new LocalConnection(), mode: 'spectate',
+  });
+  show(null);
 }
 
 async function startReplay(replay) {
@@ -242,7 +307,7 @@ async function startMission(id) {
   try {
     const def = await loadMission(id, readText, importScript);
     const missionRules = new Rules(ruleTexts.rules, ruleTexts.weapons, def.ruleNodes);
-    startSession({ gameSettings: missionSettings(def, settings.campaignDifficulty), localClient: 0, connection: new LocalConnection(), mode: 'mission', missionDef: def, missionRules });
+    startSession({ gameSettings: { ...missionSettings(def, settings.campaignDifficulty), dev: true }, localClient: 0, connection: new LocalConnection(), mode: 'mission', missionDef: def, missionRules });
     show(null);
   } catch (e) {
     console.error(e);
@@ -291,7 +356,7 @@ function showEnd() {
   const rows = [['Resonance harvested', 'harvested'], ['Units trained', 'unitsBuilt'], ['Units lost', 'unitsLost'], ['Structures woven', 'structuresBuilt'], ['Structures lost', 'structuresLost'], ['Kills', 'kills']];
   $('end-stats').innerHTML = `<thead><tr><th></th>${w.players.map((p) => `<th style="color:${s.renderer.styleOf(p).css}">${p.name}</th>`).join('')}</tr></thead><tbody>${rows.map(([l, k]) => `<tr><td>${l}</td>${w.players.map((p) => `<td>${p.stats[k]}</td>`).join('')}</tr>`).join('')}</tbody>`;
   $('btn-save-replay').hidden = !s.om.replay;
-  $('btn-again').hidden = s.mode !== 'skirmish';
+  $('btn-again').hidden = s.mode !== 'skirmish' && s.mode !== 'spectate';
   show('end-screen');
 }
 
@@ -415,6 +480,7 @@ $('replay-file').addEventListener('change', async (e) => {
 });
 function alertTitle(msg) { $('title-error').textContent = msg; }
 $('btn-menu').addEventListener('click', () => hud.togglePause(true));
+new MutationObserver(() => { if (!$('pause-screen').hidden && session) { $('autopilot').checked = !!(session.viewer && session.viewer.autopilot); $('autopilot').disabled = !session.viewer || !session.world.dev; } }).observe($('pause-screen'), { attributes: true, attributeFilter: ['hidden'] });
 $('btn-resume').addEventListener('click', () => hud.togglePause(false));
 $('btn-restart').addEventListener('click', () => { if (session && session.mode === 'mission') startMission(session.mission.id); else startSinglePlayer(); });
 $('btn-campaign').addEventListener('click', () => openCampaign());
@@ -433,7 +499,22 @@ $('btn-retry').addEventListener('click', () => startMission(session.mission.id))
 $('btn-to-campaign').addEventListener('click', () => { startDemoQuiet(); openCampaign(); });
 $('btn-objectives').addEventListener('click', () => hud.toggleObjectives());
 $('btn-quit').addEventListener('click', () => leaveGame());
-$('btn-again').addEventListener('click', () => { settings.seed = 1 + Math.floor(Math.random() * 99998); $('seed-input').value = settings.seed; startSinglePlayer(); });
+$('btn-again').addEventListener('click', () => {
+  if (session && session.mode === 'spectate') { startSpectate({ a: spectateSettings.a, b: spectateSettings.b }); return; }
+  settings.seed = 1 + Math.floor(Math.random() * 99998); $('seed-input').value = settings.seed; startSinglePlayer();
+});
+const spectateSettings = { a: 'accord:hard', b: 'combine:normal' };
+$('btn-spectate').addEventListener('click', () => show('spectate-screen'));
+$('btn-spectate-back').addEventListener('click', () => show('title-screen'));
+$('btn-spectate-start').addEventListener('click', () => {
+  spectateSettings.a = `${$('spec-a-faction').value}:${$('spec-a-bot').value}`;
+  spectateSettings.b = `${$('spec-b-faction').value}:${$('spec-b-bot').value}`;
+  startSpectate({ seed: parseInt($('spec-seed').value, 10) || undefined, ...spectateSettings });
+  if ($('spec-cine').checked) app.setCinematic(true);
+  if ($('spec-clean').checked) app.setClean(true);
+});
+$('autopilot').addEventListener('change', (e) => app.setAutopilot(e.target.checked));
+$('btn-debug').addEventListener('click', () => { hud.togglePause(false); debug.toggle(true); });
 $('btn-title').addEventListener('click', () => startDemo());
 $('btn-save-replay').addEventListener('click', saveReplay);
 $('vol').addEventListener('input', (e) => audio.setVolume(e.target.value / 100));
@@ -442,6 +523,7 @@ $('speed').addEventListener('change', (e) => { if (session && session.mode !== '
 $('replay-speed').addEventListener('change', (e) => { if (session && session.mode === 'replay') session.speed = parseFloat(e.target.value) || 1; });
 
 const KEYS = [
+  ['Developer tools', '` or F9'], ['Hide HUD (clean view)', 'F8'], ['Cinematic camera', 'F7'], ['Record video', 'F6'], ['Tilt camera', 'Shift + wheel'],
   ['Select / box select', 'Left drag'], ['Move · attack · harvest', 'Right click'], ['Queue an order', 'Shift + right click'],
   ['Add to selection', 'Shift + click'], ['Select all of a type on screen', 'Double click'], ['Attack-move', 'A'], ['Stop', 'S'],
   ['Stance: hold ground · engage', 'H · G'], ['Control group set · recall', 'Ctrl+1–9 · 1–9'], ['Jump to alert / Core', 'Space'],
@@ -454,7 +536,7 @@ const KEYS = [
 // renderer (or a background tab, where animation frames stop) doesn't hold up the other
 // players in a lockstep match.
 let lastPump = performance.now();
-const isRunning = (s) => !s.over && (s.mode === 'multiplayer' || !hud.paused);
+const isRunning = (s) => !s.over && (s.mode === 'multiplayer' || (!hud.paused && !s.devPaused));
 function pump() {
   const now = performance.now();
   const dt = Math.min(1000, now - lastPump);
@@ -465,7 +547,9 @@ function pump() {
   const maxSteps = s.mode === 'replay' ? 64 : 25;
   let n = 0;
   while (acc >= TICK_MS && n < maxSteps) {
+    const t0 = performance.now();
     if (!s.om.tryTick()) { acc = Math.min(acc, TICK_MS); break; }
+    debug.recordTick(performance.now() - t0);
     acc -= TICK_MS; n++;
   }
   if (n >= maxSteps) acc = Math.min(acc, TICK_MS);
@@ -482,7 +566,10 @@ function frame(now) {
   pump();
   const running = isRunning(s);
   const alpha = s.om.stalled || !running ? 1 : Math.min(1, acc / TICK_MS);
-  s.renderer.consumeEvents(s.world.fxEvents.splice(0));
+  const events = s.world.fxEvents.splice(0);
+  if (s.director) s.director.onEvents(events);
+  debug.onEvents(events);
+  s.renderer.consumeEvents(events);
   if (s.mode === 'demo') {
     demoT += dt;
     s.rig.yaw = -Math.PI * 0.75 + Math.sin(demoT * 0.05) * 0.6;
@@ -492,6 +579,9 @@ function frame(now) {
   } else {
     input.update(dt);
     hud.update(dt);
+    debug.update(dt);
+    if (s.director) s.director.update(dt);
+    if (autoRecord && session === s) autoRecord(dt);
     const ended = s.viewer ? !!s.viewer.outcome : s.world.gameOver || (s.mode === 'replay' && s.world.frame >= (s.connection.replay.endFrame ?? Infinity));
     if (ended && !s.over) setTimeout(() => { if (session === s && !s.over) showEnd(); }, 1500);
   }
@@ -500,6 +590,28 @@ function frame(now) {
   sun.position.set(s.rig.tx - 70, ty + 110, s.rig.tz - 40);
   sun.target.position.set(s.rig.tx, ty, s.rig.tz);
   s.renderer.update(elapsed, dt, alpha);
+  renderFrame();
+}
+
+// Letterbox (2.39:1) is drawn into the WebGL canvas itself, so recordings include it.
+function renderFrame() {
+  const w = renderer.domElement.width, h = renderer.domElement.height, pr = renderer.getPixelRatio();
+  if (!letterbox) {
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, w / pr, h / pr);
+    if (camera.aspect !== w / h) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
+    renderer.render(scene, camera);
+    return;
+  }
+  const band = Math.min(h, Math.round(w / 2.39));
+  const off = Math.round((h - band) / 2);
+  renderer.setScissorTest(false);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  renderer.setViewport(0, off / pr, w / pr, band / pr);
+  renderer.setScissor(0, off / pr, w / pr, band / pr);
+  renderer.setScissorTest(true);
+  camera.aspect = w / band; camera.updateProjectionMatrix();
   renderer.render(scene, camera);
 }
 
@@ -519,7 +631,45 @@ function frame(now) {
   }
   startDemo();
   requestAnimationFrame(frame);
+  await autostart();
 })();
 
+// ---------------------------------------------------------------- URL options (for scripted capture)
+//   ?spectate&seed=77&a=accord:hard&b=combine:normal     AI vs AI
+//   ?mission=m04-furnace&difficulty=normal&autopilot      campaign mission played by the AI
+//   ?skirmish&autopilot&seed=1207                         skirmish with your side on autopilot
+//   ?replayurl=clips/match.gwreplay.json                  play a replay file
+//   &cinematic &clean &letterbox &speed=2 &debug &record=90 (seconds, then auto-download) &mute
+let autoRecord = null;
+async function autostart() {
+  const P = params;
+  if (P.has('mute')) audio.setVolume(0);
+  try {
+    if (P.has('spectate')) startSpectate({ seed: parseInt(P.get('seed'), 10) || undefined, a: P.get('a') || undefined, b: P.get('b') || undefined });
+    else if (P.has('mission')) { settings.campaignDifficulty = P.get('difficulty') || 'normal'; await startMission(P.get('mission')); }
+    else if (P.has('skirmish')) { if (P.get('seed')) settings.seed = parseInt(P.get('seed'), 10); if (P.get('difficulty')) settings.difficulty = P.get('difficulty'); startSinglePlayer(); }
+    else if (P.has('replayurl')) await startReplay(JSON.parse(await readText(P.get('replayurl'))));
+    else return;
+  } catch (e) { console.error(e); $('title-error').textContent = e.message; return; }
+  if (P.has('autopilot')) setTimeout(() => app.setAutopilot(true), 50);
+  if (P.has('speed') && session) session.speed = parseFloat(P.get('speed')) || 1;
+  if (P.has('cinematic')) app.setCinematic(true);
+  if (P.has('clean')) app.setClean(true);
+  if (P.has('letterbox')) app.setLetterbox(true);
+  if (P.has('debug')) debug.toggle(true);
+  const secs = parseFloat(P.get('record'));
+  if (secs > 0) {
+    let started = false, t = 0;
+    autoRecord = (dt) => {
+      if (!started) { started = recorder.start({ withAudio: !P.has('mute') }); window.glasswakeRecording = started ? 'recording' : 'unsupported'; return; }
+      t += dt;
+      if (t >= secs || (session && session.over)) {
+        autoRecord = null;
+        recorder.stop().then((blob) => { window.glasswakeRecording = 'done'; if (blob) Recorder.download(blob, P.get('out') || `glasswake-${session ? session.mode : 'clip'}.webm`); });
+      }
+    };
+  }
+}
+
 // Console helpers
-window.glasswake = { get session() { return session; }, get world() { return session && session.world; }, get input() { return input; }, get rules() { return rules; }, startSinglePlayer, startReplay, startMission, openCampaign, settings };
+window.glasswake = { get session() { return session; }, get world() { return session && session.world; }, get input() { return input; }, get rules() { return rules; }, startSinglePlayer, startSpectate, startReplay, startMission, openCampaign, settings, app, debug };

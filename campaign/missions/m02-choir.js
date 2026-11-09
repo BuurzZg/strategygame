@@ -14,6 +14,7 @@ export function worldLoaded(m) {
 
   s.hold = m.objective('Keep Choir Station standing until the recording completes', { deadline: m.minutes(6), expire: 'complete' });
   s.spires = m.objective('Weave two Prism Spires', { primary: false });
+  m.botGoals(m.you, [{ cell: STATION, hold: true }]);
   m.when(() => m.actors(m.you, 'spire').filter((a) => !a.conditions.has('weaving')).length >= 2, () => m.complete(s.spires));
 
   m.onKilled(m.actor('choir'), () => {

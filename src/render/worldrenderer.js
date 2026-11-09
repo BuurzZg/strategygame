@@ -46,6 +46,9 @@ export class WorldRenderer {
     this.allVisible = new Uint8Array(this.map.n * this.map.n).fill(2);
   }
 
+  // Debug: render as another player (their fog), or reveal everything.
+  setViewer(player, reveal) { this.viewer = player || null; this.reveal = !!reveal || !player; }
+
   styleOf(player) { return this.styles.get(player.faction) || this.styles.values().next().value; }
 
   // ---------------------------------------------------------------- visibility for the local viewer
@@ -98,7 +101,7 @@ export class WorldRenderer {
       const a = v.actor, m = v.model;
       const vis = this.isVisible(a);
       m.root.visible = vis;
-      v.ring.visible = vis && this.selected.has(a);
+      v.ring.visible = vis && !this.hideRings && this.selected.has(a);
       if (!vis) continue;
       if (a.building) {
         m.root.position.set(a.x * R, v.y, a.y * R);

@@ -15,6 +15,7 @@ export class Audio {
       this.master.gain.value = this.volume;
       const comp = this.ctx.createDynamicsCompressor();
       this.master.connect(comp); comp.connect(this.ctx.destination);
+      this.output = comp; // recordings tap the mix here
       const len = this.ctx.sampleRate;
       this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = this.noise.getChannelData(0);

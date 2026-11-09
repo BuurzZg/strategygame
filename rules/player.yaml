@@ -25,6 +25,18 @@ Player:
 		RequiresCondition: bot-passive
 		ThinkInterval: 25
 		HarvestBonus: 100
+	BotProfile@autopilot:
+		RequiresCondition: bot-autopilot
+		ThinkInterval: 15
+		HarvestBonus: 100
+		FirstWave: 2500
+		WaveBase: 18
+		WaveGrow: 6
+		MaxFoundries: 5
+		AttackRatio: 115
+		RetreatRatio: 55
+		ExpandAfter: 1200
+		SkimmersPerDropoff: 5
 	BotProfile@easy:
 		RequiresCondition: bot-easy
 		ThinkInterval: 40
@@ -49,6 +61,8 @@ Player:
 		WaveBase: 18
 		WaveGrow: 10
 		MaxFoundries: 4
+		AttackRatio: 100
+		RetreatRatio: 55
 	HarvesterBotModule:
 		RequiresCondition: bot
 	BaseBuilderBotModule:
